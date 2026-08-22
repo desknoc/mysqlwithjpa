@@ -1,6 +1,8 @@
 package com.sena.mysqlwithjpa.controller;
 
 import jakarta.servlet.http.HttpServletRequest;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MissingServletRequestParameterException;
@@ -13,6 +15,8 @@ import java.util.NoSuchElementException;
 @RestControllerAdvice
 public class ExceptionController {
 
+    // Creamos la variable de clase para poder acceder a los logs
+    public static final Logger log = LoggerFactory.getLogger(ExceptionController.class);
 
     // Excepción 400
 
@@ -26,6 +30,9 @@ public class ExceptionController {
         error.setError(HttpStatus.BAD_REQUEST.getReasonPhrase());
         error.setMessage(ex.getMessage());
         error.setPath(request.getRequestURI());
+
+        // Agregamos los logs para los parámetros
+        log.warn("Parámetro faltante en {}: {}", request.getRequestURI(), ex.getMessage());
 
         return new ResponseEntity<>(error, HttpStatus.BAD_REQUEST);
     }
@@ -43,6 +50,9 @@ public class ExceptionController {
         error.setMessage(ex.getMessage());
         error.setPath(request.getRequestURI());
 
+        // Agregamos logs para los NOT_FOUND
+        log.warn("Elemento no encontrado en {}: {}", request.getRequestURI(), ex.getMessage());
+
         return new ResponseEntity<>(error, HttpStatus.NOT_FOUND);
     }
 
@@ -58,6 +68,9 @@ public class ExceptionController {
         error.setError(HttpStatus.INTERNAL_SERVER_ERROR.getReasonPhrase());
         error.setMessage("Error Interno del Servidor"); // No podemos exponer mensajes de la BD al cliente, es una mala práctica
         error.setPath(request.getRequestURI());
+
+        // Agregamos logs para el error 500
+        log.error("Error inesperado en {}: {}", request.getRequestURI(), ex.getMessage(), ex);
 
         return new ResponseEntity<>(error, HttpStatus.INTERNAL_SERVER_ERROR);
     }
