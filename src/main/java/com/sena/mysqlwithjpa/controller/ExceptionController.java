@@ -1,6 +1,7 @@
 package com.sena.mysqlwithjpa.controller;
 
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.validation.ConstraintViolationException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
@@ -33,6 +34,24 @@ public class ExceptionController {
 
         // Agregamos los logs para los parámetros
         log.warn("Parámetro faltante en {}: {}", request.getRequestURI(), ex.getMessage());
+
+        return new ResponseEntity<>(error, HttpStatus.BAD_REQUEST);
+    }
+
+    // Excepción 400 por validación: el cliente mandó un dato que no cumple
+    // las reglas declaradas con anotaciones en la entity User.
+    @ExceptionHandler(ConstraintViolationException.class)
+    public ResponseEntity<ApiError> manejarErrorValidacion(ConstraintViolationException ex, HttpServletRequest request) {
+
+        ApiError error = new ApiError();
+        error.setTimestamp(LocalDateTime.now());
+        error.setStatus(HttpStatus.BAD_REQUEST.value());
+        error.setError(HttpStatus.BAD_REQUEST.getReasonPhrase());
+        error.setMessage(ex.getMessage());
+        error.setPath(request.getRequestURI());
+
+        // Logs para la validación fallida
+        log.warn("Validación fallida en {}: {}", request.getRequestURI(), ex.getMessage());
 
         return new ResponseEntity<>(error, HttpStatus.BAD_REQUEST);
     }
