@@ -34,3 +34,6 @@ build/
 
 ### AI ###
 .atl
+
+### Local environment secrets ###
+.env
