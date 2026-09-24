@@ -9,11 +9,11 @@
 | Chained PRs recommended | Yes |
 | Suggested split | PR 1 (Foundation: config + deps + static deletion) → PR 2 (Domain: entity/enums + repository + test schema) → PR 3 (Security plumbing: BCrypt, sanitizer, CORS, rate limit) → PR 4 (Core: service + CRUD controller + errors) → PR 5 (Search & pagination endpoints) → PR 6 (Mongo logging) → PR 7 (Docs) |
 | Delivery strategy | ask-on-risk |
-| Chain strategy | pending |
+| Chain strategy | stacked-to-main |
 
 Decision needed before apply: Yes
 Chained PRs recommended: Yes
-Chain strategy: pending
+Chain strategy: stacked-to-main
 400-line budget risk: High
 
 > ask-on-risk: before `sdd-apply` starts, ask the user to choose the chain strategy —
