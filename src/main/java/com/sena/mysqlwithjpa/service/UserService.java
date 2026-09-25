@@ -6,6 +6,7 @@ import com.sena.mysqlwithjpa.entity.User;
 import com.sena.mysqlwithjpa.repository.UserRepository;
 import com.sena.mysqlwithjpa.service.exception.DuplicateResourceException;
 import com.sena.mysqlwithjpa.service.exception.NotFoundException;
+import com.sena.mysqlwithjpa.service.log.LogService;
 import com.sena.mysqlwithjpa.util.Sanitizer;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -23,18 +24,25 @@ import java.time.LocalDateTime;
  * {@code fechaRegistro} once on insert (the schema has no DB default for it),
  * and leaves {@code rol} null when the client omits it so {@code rolDefecto}
  * applies USUARIO via the entity's {@code @DynamicInsert}.
+ * Successful create/update/delete operations are reported to the system logger
+ * with component + action + affected id ONLY — never payloads, credentials,
+ * or hashes (spec mongodb-logging: no secrets in logs).
  */
 @Service
 public class UserService {
 
     private static final int MIN_PASSWORD_LENGTH = 8;
+    private static final String COMPONENT = "UserService";
 
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
+    private final LogService logService;
 
-    public UserService(UserRepository userRepository, PasswordEncoder passwordEncoder) {
+    public UserService(UserRepository userRepository, PasswordEncoder passwordEncoder,
+                       LogService logService) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
+        this.logService = logService;
     }
 
     public UserResponse create(UserRequest request) {
@@ -48,7 +56,9 @@ public class UserService {
         user.setContrasena(passwordEncoder.encode(request.contrasena()));
         user.setFechaRegistro(LocalDateTime.now());
 
-        return UserResponse.from(userRepository.save(user));
+        UserResponse response = UserResponse.from(userRepository.save(user));
+        logService.logInfo(COMPONENT, "user created id=" + response.id());
+        return response;
     }
 
     public UserResponse findById(Integer id) {
@@ -64,7 +74,9 @@ public class UserService {
             user.setContrasena(passwordEncoder.encode(request.contrasena()));
         }
         // fechaRegistro / ultimaActualizacion are never touched here.
-        return UserResponse.from(userRepository.save(user));
+        UserResponse response = UserResponse.from(userRepository.save(user));
+        logService.logInfo(COMPONENT, "user updated id=" + response.id());
+        return response;
     }
 
     public void delete(Integer id) {
@@ -72,6 +84,7 @@ public class UserService {
             throw new NotFoundException("User", id);
         }
         userRepository.deleteById(id);
+        logService.logInfo(COMPONENT, "user deleted id=" + id);
     }
 
     private User findUser(Integer id) {

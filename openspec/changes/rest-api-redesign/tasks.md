@@ -83,11 +83,11 @@ Chain strategy: stacked-to-main
 
 ## Phase 6: MongoDB Logging
 
-- [ ] 6.1 **RED**: Create `src/test/java/com/sena/mysqlwithjpa/service/log/LogServiceTest.java` (mocked `MongoTemplate`): `logInfo` writes one document (timestamp, level, message, component) to collection `info` and NOT to `warns`/`error`; `logWarn` → `warns` only; `logError(msg, Throwable)` → `error` including stack trace; logged content NEVER contains a plaintext password, BCrypt hash, or connection string — FAILS until LogService exists
-- [ ] 6.2 **GREEN**: Create `src/main/java/com/sena/mysqlwithjpa/service/log/LogEntry.java` (timestamp, level, message, component, stackTrace?) and `service/log/LogService.java` writing via `MongoTemplate` into `info`/`warns`/`error` collections (lazy creation — no explicit collection provisioning); gate all methods on `app.logging.mongo.enabled` (default `true`) — test 6.1 PASSES
-- [ ] 6.3 **RED**: Add degradation test to `LogServiceTest`: `MongoTemplate.save` throwing / Mongo unreachable → no exception propagates to caller, failure reported to SLF4J console; with `MONGO_LOGGING_ENABLED=false` methods are no-ops
-- [ ] 6.4 **GREEN**: Wrap every `LogService` write in try/catch (swallow + SLF4J) per design Decision 6; ensure application startup never blocks on Mongo reachability (no eager connection) — test 6.3 PASSES
-- [ ] 6.5 **GREEN**: Wire `LogService.logInfo/logWarn/logError` calls into `UserService` create/update/delete flows (component name `UserService`), logging only non-secret fields (ids, documento is fine for audit? — NO: log only component + action + affected id; never contrasena/hash/credentials) — covered by the no-secrets assertion in 6.1
+- [x] 6.1 **RED**: Create `src/test/java/com/sena/mysqlwithjpa/service/log/LogServiceTest.java` (mocked `MongoTemplate`): `logInfo` writes one document (timestamp, level, message, component) to collection `info` and NOT to `warns`/`error`; `logWarn` → `warns` only; `logError(msg, Throwable)` → `error` including stack trace; logged content NEVER contains a plaintext password, BCrypt hash, or connection string — FAILS until LogService exists
+- [x] 6.2 **GREEN**: Create `src/main/java/com/sena/mysqlwithjpa/service/log/LogEntry.java` (timestamp, level, message, component, stackTrace?) and `service/log/LogService.java` writing via `MongoTemplate` into `info`/`warns`/`error` collections (lazy creation — no explicit collection provisioning); gate all methods on `app.logging.mongo.enabled` (default `true`) — test 6.1 PASSES
+- [x] 6.3 **RED**: Add degradation test to `LogServiceTest`: `MongoTemplate.save` throwing / Mongo unreachable → no exception propagates to caller, failure reported to SLF4J console; with `MONGO_LOGGING_ENABLED=false` methods are no-ops
+- [x] 6.4 **GREEN**: Wrap every `LogService` write in try/catch (swallow + SLF4J) per design Decision 6; ensure application startup never blocks on Mongo reachability (no eager connection) — test 6.3 PASSES
+- [x] 6.5 **GREEN**: Wire `LogService.logInfo/logWarn/logError` calls into `UserService` create/update/delete flows (component name `UserService`), logging only non-secret fields (ids, documento is fine for audit? — NO: log only component + action + affected id; never contrasena/hash/credentials) — covered by the no-secrets assertion in 6.1
 
 ## Phase 7: Documentation & Final Verification
 

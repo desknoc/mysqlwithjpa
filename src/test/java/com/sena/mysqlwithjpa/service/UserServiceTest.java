@@ -9,6 +9,7 @@ import com.sena.mysqlwithjpa.entity.User;
 import com.sena.mysqlwithjpa.repository.UserRepository;
 import com.sena.mysqlwithjpa.service.exception.DuplicateResourceException;
 import com.sena.mysqlwithjpa.service.exception.NotFoundException;
+import com.sena.mysqlwithjpa.service.log.LogService;
 import com.sena.mysqlwithjpa.util.SanitizationException;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -22,11 +23,14 @@ import java.time.LocalDateTime;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -48,6 +52,9 @@ class UserServiceTest {
 
     @Mock
     private PasswordEncoder passwordEncoder;
+
+    @Mock
+    private LogService logService;
 
     @InjectMocks
     private UserService userService;
@@ -229,6 +236,61 @@ class UserServiceTest {
 
         assertThrows(NotFoundException.class, () -> userService.update(99, validRequest()));
         verify(userRepository, never()).save(any());
+    }
+
+    // 6.5 RED: create/update/delete flows report operational events to the
+    // system logger, with component + action + affected id only.
+    @Test
+    void createLogsComponentActionAndAffectedId() {
+        when(passwordEncoder.encode(PLAINTEXT)).thenReturn(STORED_HASH);
+        User saved = existingUser();
+        when(userRepository.save(any(User.class))).thenReturn(saved);
+
+        userService.create(validRequest());
+
+        ArgumentCaptor<String> message = ArgumentCaptor.forClass(String.class);
+        verify(logService).logInfo(eq("UserService"), message.capture());
+        assertTrue(message.getValue().contains("created"), "message must name the action");
+        assertTrue(message.getValue().contains("id=7"), "message must carry only the affected id");
+        assertFalse(message.getValue().contains(PLAINTEXT), "plaintext must never be logged");
+        assertFalse(message.getValue().contains("$2b$"), "the BCrypt hash must never be logged");
+        assertFalse(message.getValue().contains("ana@example.com"),
+                "log entries carry only component + action + id, not payloads");
+    }
+
+    @Test
+    void updateLogsComponentActionAndAffectedId() {
+        when(userRepository.findById(7)).thenReturn(Optional.of(existingUser()));
+        when(userRepository.save(any(User.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        UserRequest request = new UserRequest(
+                "Ana", null, "Garcia", null,
+                TipoDocumento.CC, 1234567890L,
+                "3119998877", null, "ana@example.com",
+                null, null, null);
+
+        userService.update(7, request);
+
+        verify(logService).logInfo(eq("UserService"),
+                org.mockito.ArgumentMatchers.argThat(m -> m.contains("updated") && m.contains("id=7")));
+    }
+
+    @Test
+    void deleteLogsComponentActionAndAffectedId() {
+        when(userRepository.existsById(7)).thenReturn(true);
+
+        userService.delete(7);
+
+        verify(logService).logInfo(eq("UserService"),
+                org.mockito.ArgumentMatchers.argThat(m -> m.contains("deleted") && m.contains("id=7")));
+    }
+
+    @Test
+    void deleteLogsNothingWhenTheIdDoesNotExist() {
+        when(userRepository.existsById(99)).thenReturn(false);
+
+        assertThrows(NotFoundException.class, () -> userService.delete(99));
+        verifyNoInteractions(logService);
     }
 
     @Test
