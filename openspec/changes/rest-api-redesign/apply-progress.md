@@ -244,3 +244,69 @@ Phase 2: see "Deviations from Design (Phase 2)" above.
 ## Status
 
 14/34 tasks verified (Phases 1 + 3 complete and tested); 2.1–2.9 authored but **UNVERIFIED (Docker unavailable)**. Next: Phase 2 Docker verification run, then Phase 4 (Core CRUD) on branch `rest-api-redesign/pr-4-core` stacked on PR 3. Not ready for archive.
+
+## Apply Progress: Phase 4 (Core CRUD, PR 4 branch) — VERIFIED
+
+**Branch**: `rest-api-redesign/pr-4-core` (stacked on `rest-api-redesign/pr-3-security` @ 6ae1b5f). **Docker: not required** — Mockito unit + `@WebMvcTest` slices, all executed for real in this environment.
+
+- [x] 4.1→4.2→4.3 RED→GREEN (verified): `UserServiceTest` (JUnit 5 + Mockito, mock `UserRepository` + `PasswordEncoder`, 14 tests): RED = compile failure (`UserService`/DTOs/exceptions absent, observed) → GREEN **14/14 PASS**. Covers spec cases (a) hash-before-save (stored ≠ plaintext), (b) short `contrasena` → `IllegalArgumentException` BEFORE encoder/repository are touched, (c) duplicate `documento` / `correoElectronico` → `DuplicateResourceException` naming the field, (d) `<script>` in `primerNombre` → `SanitizationException` with zero persistence + triangulation (`José Lía` passes byte-identical, explicit `rol=ADMIN`/`tipoApoyo=alimentacion` kept), (e) update without `contrasena` leaves the stored hash byte-identical (encoder never called) + triangulation (update WITH contrasena re-hashes), (f) update of missing id → `NotFoundException`, (g) trigger-owned columns never carried (`ultimaActualizacion` null on insert, `fechaRegistro` service-set, `rol` null-omitted for `rolDefecto`). Plus findById/delete happy+404 paths. Files: `service/exception/DuplicateResourceException`, `service/exception/NotFoundException` (both carry named context), `service/UserService`, DTOs `dto/UserRequest` + `dto/UserResponse` as **Java records** (see deviation 1).
+- [x] 4.4→4.5 RED→GREEN (verified): `UserControllerTest` (`@WebMvcTest(MainController.class)` + `@Import({SecurityConfig, CorsConfig})`, `@MockitoBean UserService`, 16 tests). RED = context load failure (16/16 ERROR) because the old `MainController` still required `UserRepository` — observed. GREEN: `MainController` rewritten as `@RestController /api/users` (POST 201 with `@Validated(OnCreate)`, GET 200, PUT 200 `@Valid`, DELETE 204 empty); legacy `/demo/**` deleted; `ExceptionController` extended with handlers for bean validation (400), `SanitizationException`/`IllegalArgumentException` (400), `NotFoundException` (404), `DuplicateResourceException` + `DataIntegrityViolationException` fallback (409), `RateLimitExceededException` (429 + `Retry-After`), and unrouted paths (`NoHandlerFoundException`/`NoResourceFoundException` → 404 — see deviation 2). `ApiError.java` untouched (verified by diff).
+- [x] 4.6 routing threat-matrix regression (verified): POST `/demo/add` → 404, GET `/demo/all` → 404, POST `/login` → 404. Authored inside the 4.4 RED (observed failing: `/demo/*` gave 500 via the interim `UnsupportedOperationException`/legacy mapping, POST `/login` already 404) and passing since the 4.5 rewrite.
+
+### TDD Cycle Evidence (Phase 4 — all executed; no Docker)
+
+| Task | Test File | Layer | Safety Net | RED | GREEN | TRIANGULATE | REFACTOR |
+|------|-----------|-------|------------|-----|-------|-------------|----------|
+| 4.1–4.3 | `service/UserServiceTest.java` | Unit (Mockito) | ✅ 29/29 baseline run before edits | ✅ Compile failure (`UserService` missing) | ✅ 14/14 pass | ✅ 12 scenarios incl. unicode accept, re-hash update, duplicate per field, trigger-hygiene | ✅ `applyMutableFields`/`sanitize` helpers extracted; green after |
+| 4.4–4.5 | `controller/UserControllerTest.java` | Web slice (`@WebMvcTest`) | ✅ 29/29 baseline | ✅ Context load failure (16/16 ERROR, old controller contract) | ✅ 16/16 pass | ✅ Status matrix 201/200/204/400×3/404×5/409/429/500 + no-password serialization assertions | ✅ `ExceptionController` build/buildBody helpers for the new handlers; existing handlers untouched |
+| 4.6 | (3 legacy-route tests inside `UserControllerTest`) | Web slice | ✅ 29/29 baseline | ✅ observed 500/200 while legacy routes lived | ✅ 3/3 pass after rewrite | ➖ Single shape per route (status-only contract) | ➖ None |
+
+Two real failures were caught and fixed DURING `UserControllerTest`'s GREEN pass (honest iteration, not silent): (1) `@Validated(OnCreate.class)` ignored the default group — `OnCreate` now extends `jakarta.validation.groups.Default` so required fields still validate on POST; (2) unrouted paths fell into the 500 catch-all — added a 404 handler for `NoHandlerFoundException`/`NoResourceFoundException`, which is also what makes 4.6's contract hold.
+
+### Test Summary (Phase 4)
+- **Total tests written**: 30 (14 service + 16 controller)
+- **Total tests passing**: 30; combined run with Phases 1+3 regression: **59/59** (`./mvnw -o test -Dtest=UserServiceTest,UserControllerTest,PasswordEncoderTest,SanitizerTest,CorsConfigTest,RateLimitFilterTest,AppConfigurationPropertiesTest` → BUILD SUCCESS)
+- **Layers used**: Unit (14), Web slice (16). No Testcontainers, no Docker, no live MySQL/Mongo.
+- **Approval tests**: None — MainController's old behavior was superseded by spec (its only live read path, `/demo/all`, is replaced per contract by 404 + `/api/users` coverage).
+
+### Work Unit Evidence (Unit 4: Core CRUD)
+
+- **Focused test command**: `.\mvnw.cmd -o test "-Dtest=UserServiceTest,UserControllerTest"` → **30/30 PASS** (observed). Full slice regression: **59/59 PASS** (observed).
+- **Runtime harness**: full status matrix executed through a real Spring Security filter chain + DispatcherServlet in the `@WebMvcTest` slice (201/200/204/400/404/409/429/500, `Retry-After` header, password-free JSON bodies). Boot against Aiven/MySQL not attempted (runtime DB boundary remains Docker-gated, Phase 2 carry-over); `PUT /api/users/{id}` without `contrasena` exercising the validation-group split ran green through MockMvc.
+- **Rollback boundary**: `git revert 4140bd1 2fc8066` (or revert `service/`, `dto/`, `controller/MainController.java`, `controller/ExceptionController.java`, the two new test files, and the `CorsConfigTest` mock/URL update). No prior-phase files otherwise touched; `controller/ApiError.java` verified unchanged by diff.
+
+### Files Changed (Phase 4)
+
+| File | Action | What |
+|------|--------|------|
+| `src/main/java/com/sena/mysqlwithjpa/service/UserService.java` | Created | Hashing, ≥8 pre-hash validation, sanitizer, uniqueness pre-checks, trigger-aware persistence |
+| `src/main/java/com/sena/mysqlwithjpa/service/exception/{DuplicateResourceException,NotFoundException}.java` | Created | 409 (carries `field`) / 404 types |
+| `src/main/java/com/sena/mysqlwithjpa/dto/{UserRequest,UserResponse}.java` | Created | Records; `OnCreate` validation group extending `Default`; response has no password field at all |
+| `src/main/java/com/sena/mysqlwithjpa/controller/MainController.java` | Rewritten | `@RestController /api/users`; POST/GET/PUT/DELETE per frozen route table; `/demo/**` deleted |
+| `src/main/java/com/sena/mysqlwithjpa/controller/ExceptionController.java` | Extended | 400 (bean validation, sanitizer/service input), 404 (not-found + unrouted), 409 (duplicate + constraint fallback), 429 + `Retry-After`; existing handlers kept |
+| `src/main/java/com/sena/mysqlwithjpa/controller/ApiError.java` | Unchanged (verified) | Reused envelope |
+| `src/test/java/com/sena/mysqlwithjpa/service/UserServiceTest.java` | Created | 14 Mockito cases |
+| `src/test/java/com/sena/mysqlwithjpa/controller/UserControllerTest.java` | Created | 16 MockMvc cases incl. legacy-404 regression |
+| `src/test/java/com/sena/mysqlwithjpa/config/CorsConfigTest.java` | Modified | Probes moved from deleted `/demo/all` to `/api/users/7`; mock switched to `UserService` (forced by the controller's new constructor) |
+| `openspec/changes/rest-api-redesign/tasks.md` | Modified | 4.1–4.6 marked [x] |
+
+### Commits (Phase 4, branch `rest-api-redesign/pr-4-core`)
+
+- `2fc8066` feat(users): add UserService with hashing, validation, sanitization and uniqueness checks (511 src lines)
+- `4140bd1` feat(users): expose REST CRUD at /api/users with full ApiError status envelope (≈486 src lines incl. controller test + CorsConfigTest probe move)
+
+### Deviations from Design (Phase 4)
+
+1. **DTOs implemented as Java records** (design shows no DTO shape, only the field/validation contract). Records give immutability + Jackson + bean validation for free and remove ~100 lines of getters; the contract (required/optional fields, `contrasena` create-only via the `OnCreate` group, no password in responses) matches the design exactly.
+2. **`NoHandlerFoundException`/`NoResourceFoundException` mapped to 404 explicitly** — design Decision 1's route table plus the spec's legacy-404 requirement silently assumed unmapped paths answer 404, but Spring's default in this stack lets them reach the generic handler as 500. The explicit mapping is the only honest implementation of the spec scenario.
+3. **Short-password rejection throws `IllegalArgumentException`** (mapped to 400 alongside `SanitizationException`) — task 4.2 authorizes exactly two new exception types (duplicate/not-found); inventing a third would deviate more.
+4. **429 lives in BOTH the filter and the advice** (design correction already recorded in Phase 3): the filter renders its own envelope for filter-chain rejections; the advice handler is the tested MVC-side fallback.
+
+### Issues / Risks (Phase 4)
+
+- **PR budget**: Phase 4 slice = **997 changed lines** (`src/` only, across the two commits), well over the 400-line budget as one PR. Honest commit-boundary split at PR-creation time: **PR 4a** = `2fc8066` (service slice ≈511 lines, independently green: 14/14 + regression) → **PR 4b** = `4140bd1` (controller slice ≈486 lines, 59/59). Both slices are test-heavy by strict-TDD construction; no cohesive further split exists without orphaning tests from their code — if the maintainer hard-enforces 400/PR, these two slices need `size:exception`. Not pushed; no PRs created (per orchestrator boundary).
+- Mockito JDK self-attach warning remains cosmetic.
+
+## Status
+
+20/34 tasks verified (Phases 1, 3, 4 complete and tested — 59/59 green in this environment); 2.1–2.9 still **UNVERIFIED (Docker unavailable)**. Next: Phase 2 Docker verification run, then Phase 5 (Search & Pagination) on a PR 5 branch stacked on `rest-api-redesign/pr-4-core`. Not ready for archive.
