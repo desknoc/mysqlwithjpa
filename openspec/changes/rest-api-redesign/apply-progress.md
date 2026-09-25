@@ -310,3 +310,61 @@ Two real failures were caught and fixed DURING `UserControllerTest`'s GREEN pass
 ## Status
 
 20/34 tasks verified (Phases 1, 3, 4 complete and tested — 59/59 green in this environment); 2.1–2.9 still **UNVERIFIED (Docker unavailable)**. Next: Phase 2 Docker verification run, then Phase 5 (Search & Pagination) on a PR 5 branch stacked on `rest-api-redesign/pr-4-core`. Not ready for archive.
+
+## Apply Progress: Phase 6 (MongoDB Logging, PR 6 branch) — VERIFIED
+
+**Branch**: `rest-api-redesign/pr-6-mongo-logging` stacked on `rest-api-redesign/pr-4-core` @ 43d6813. **Chain order adapted**: the user explicitly chose to SKIP Phase 5 for now (its repository tests need Docker, which is down); PR 6 is therefore stacked directly on PR 4, and Phase 5 will land later on its own branch. `stacked-to-main` strategy otherwise unchanged. **Docker: not required** — Mockito unit slices with a mocked `MongoTemplate`, all executed for real in this environment.
+
+- [x] 6.1 RED → 6.2 GREEN (verified): `LogServiceTest` created first (observed RED = compile failure, `LogService`/`LogEntry` absent): per-level routing — `logInfo` → `info` only (never `warns`/`error`), `logWarn` → `warns` only, `logError(msg, t)` → `error` with captured stack trace; document content (timestamp, level, message, component); secret hygiene assertion (no plaintext password, no `$2b$` hash prefix, no `mongodb://` connection string, no `contrasena` field names in any persisted document). GREEN via `service/log/LogEntry.java` (record) + `service/log/LogService.java` (writes via `MongoTemplate`, lazy collection creation, gated on `app.logging.mongo.enabled` default `true`).
+- [x] 6.3 RED (observed) → 6.4 GREEN (verified): degradation tests failed with the raw exception propagating (2/7 failing — observed); GREEN via try/catch on every write (swallow + SLF4J warn, design Decision 6) — failure never reaches the caller and the dropped entry is reported to the console log (verified with a Logback `ListAppender`); with `app.logging.mongo.enabled=false` all methods are verified no-ops. Startup never blocks on Mongo: `MongoTemplate` connects lazily on first write, no eager connection anywhere.
+- [x] 6.5 GREEN (verified): `LogService` wired into `UserService` — `logInfo("UserService", "user created id=N")` / `updated` / `deleted` on successful flows only; rejection paths (duplicate, not-found, sanitizer) log nothing (verified by `verifyNoInteractions` on the not-found delete). RED observed first (3 interaction tests failing with "wanted but not invoked"), then wiring → green.
+
+### TDD Cycle Evidence (Phase 6 — all executed; no Docker)
+
+| Task | Test File | Layer | Safety Net | RED | GREEN | TRIANGULATE | REFACTOR |
+|------|-----------|-------|------------|-----|-------|-------------|----------|
+| 6.1–6.2 | `service/log/LogServiceTest.java` | Unit (Mockito, mocked `MongoTemplate`) | ✅ 59/59 baseline run before edits | ✅ Compile failure (`LogService` absent) | ✅ 5/5 routing/content/flag tests pass | ✅ 4 distinct scenarios (info/warns/error routing + secret hygiene) | ✅ Clean (`stackTraceOf` helper extracted) |
+| 6.3–6.4 | (same file — degradation block) | Unit (Mockito + Logback `ListAppender`) | ✅ 59/59 baseline | ✅ 2/7 failing: raw `IllegalStateException` propagated to caller (observed) | ✅ 7/7 pass | ✅ Failure swallowed for info AND error paths + SLF4J report asserted + disabled-flag no-op | ✅ `write(collection, entry)` private helper absorbs the try/catch once, not three times |
+| 6.5 | `service/UserServiceTest.java` (+4 tests) | Unit (Mockito) | ✅ 59/59 baseline | ✅ 3 failures: `logService.logInfo` wanted but not invoked (observed) | ✅ 18/18 pass | ✅ create/update/delete happy paths + not-found delete logs nothing; message content asserted (action, id, NO plaintext/hash/email) | ➖ None needed |
+
+### Test Summary (Phase 6)
+- **Total tests written**: 11 (7 `LogServiceTest` + 4 new `UserServiceTest`)
+- **Total tests passing**: 11; full slice regression: **70/70 PASS** (`./mvnw -o test -Dtest=LogServiceTest,UserServiceTest,UserControllerTest,PasswordEncoderTest,SanitizerTest,CorsConfigTest,RateLimitFilterTest,AppConfigurationPropertiesTest` → BUILD SUCCESS, observed)
+- **Layers used**: Unit (11). No Testcontainers, no Docker, no live MongoDB.
+- **Approval tests**: None — no refactoring of existing logic; `UserService` additions are behavior additions with new tests.
+
+### Work Unit Evidence (Unit 6: MongoDB logging)
+
+- **Focused test command**: `.\mvnw.cmd -o test "-Dtest=LogServiceTest"` → **7/7 PASS** (observed). Full regression: **70/70 PASS** (observed).
+- **Runtime harness**: degradation path executed against a mocked `MongoTemplate` throwing on `save` (caller unaffected, SLF4J report asserted via `ListAppender`); disabled flag verified as pure no-op (`verifyNoInteractions`). Live run with unreachable Mongo URI / `MONGO_LOGGING_ENABLED=false` against a booted app remains a verify-phase activity (app boot needs the MySQL datasource, Docker-gated in this environment). No eager Mongo connection exists in code (lazy `MongoTemplate` connect on first write), so startup is unaffected by construction.
+- **Rollback boundary**: `git revert 786fe84 83df269` (or revert `service/log/`, the `UserService` log lines, `UserServiceTest` additions, tasks.md marks). No prior-phase behavior touched.
+
+### Files Changed (Phase 6)
+
+| File | Action | What |
+|------|--------|------|
+| `src/main/java/com/sena/mysqlwithjpa/service/log/LogEntry.java` | Created | Record: timestamp, level, message, component, stackTrace (null on non-errors) |
+| `src/main/java/com/sena/mysqlwithjpa/service/log/LogService.java` | Created | Per-level `MongoTemplate` writes (`info`/`warns`/`error`), lazy collections, `app.logging.mongo.enabled` gate, try/catch degradation to SLF4J |
+| `src/test/java/com/sena/mysqlwithjpa/service/log/LogServiceTest.java` | Created | 7 tests: routing, content, stack trace, secrets, degradation, disabled flag |
+| `src/main/java/com/sena/mysqlwithjpa/service/UserService.java` | Modified | `LogService` injected; `logInfo` on successful create/update/delete with component + action + id only |
+| `src/test/java/com/sena/mysqlwithjpa/service/UserServiceTest.java` | Modified | 4 new tests asserting the logging contract incl. not-found silence |
+| `openspec/changes/rest-api-redesign/tasks.md` | Modified | 6.1–6.5 marked [x] |
+
+### Commits (Phase 6, branch `rest-api-redesign/pr-6-mongo-logging`)
+
+- `83df269` feat(logging): add MongoDB system logger with per-level collections and graceful degradation
+- `786fe84` feat(users): log create/update/delete operations (component + action + id only)
+
+### Deviations from Design (Phase 6)
+
+None — implementation matches design Decision 6 exactly (per-level collections, lazy creation, `app.logging.mongo.enabled` opt-out defaulting true, try/catch degradation, no eager connection). `logWarn`/`logError` are not yet called from business flows — task 6.5 only mandates the wiring of create/update/delete operational events; warn/error paths remain available for Phase 7/verify usage.
+
+### Issues / Risks (Phase 6)
+
+- **PR budget**: Phase 6 slice = **371 changed lines** (363+, 8− across 6 files), WITHIN the 400 budget — single PR, no split or `size:exception` needed.
+- **Chain-order deviation (user-directed)**: PR 6 stacked on PR 4 (`43d6813`), NOT on PR 5 — Phase 5 skipped for now (Docker required). When Phase 5 lands, its branch should stack on `pr-6-mongo-logging` or rebase; either keeps `stacked-to-main` intact.
+- Mockito JDK self-attach warning remains cosmetic.
+
+## Status
+
+25/34 tasks verified (Phases 1, 3, 4, 6 complete and tested — 70/70 green in this environment); 2.1–2.9 still **UNVERIFIED (Docker unavailable)**; Phase 5 and Phase 7 pending. Next: Phase 2 Docker verification run, then Phase 5 (Search & Pagination), then Phase 7 docs. Not ready for archive.
