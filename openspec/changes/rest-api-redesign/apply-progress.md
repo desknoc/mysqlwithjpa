@@ -173,3 +173,74 @@ Phase 2: see "Deviations from Design (Phase 2)" above.
 ## Status
 
 6/34 tasks verified; 2.1–2.9 authored but **UNVERIFIED (Docker unavailable)** — overall Phase 2 status: **partial**. Not ready for archive; ready for Phase 3 (security plumbing — unit/web slice, no Docker needed) or for the Docker verification run, whichever the orchestrator schedules first.
+
+## Apply Progress: Phase 3 (Security Plumbing, PR 3 branch)
+
+**Branch**: `rest-api-redesign/pr-3-security` (stacked on `rest-api-redesign/pr-2-domain` @ 3fe772a). **Docker: not required** — all Phase 3 slices are unit or `@WebMvcTest` and were executed for real in this environment.
+
+- [x] 3.1–3.2 RED→GREEN (verified): `PasswordEncoderTest` (unit, no Spring context — the bean contract of `SecurityConfig`) + `config/SecurityConfig.java` (`@EnableWebSecurity`, `PasswordEncoder` = `BCryptPasswordEncoder(10)`, permit-all chain with CSRF/form-login/basic disabled, `cors(withDefaults())`). **Cross-stack compatibility verified for real**: the documented constant is a genuine `$2b$10$` hash of `"password"` generated with bcryptjs (the Express stack's bcrypt library) — Spring's encoder verifies it `true`, wrong plaintext `false`; fresh hashes start with `$2a$10$`.
+- [x] 3.3–3.4 RED→GREEN (verified): `SanitizerTest` (11 cases: script tags, uppercase variants, `onerror=`/`onclick =`, `../` + `..\` traversal, `<b>` markup vs. accepted `José Lía`, null/blank, ordinary punctuation) + `util/Sanitizer.java` (`requireClean(field, value)` pure static, blocklist of 3 regex classes) + `util/SanitizationException.java`.
+- [x] 3.5–3.6 RED→GREEN (verified): `CorsConfigTest` (`@WebMvcTest(MainController.class)` + MockMvc, `@Import({SecurityConfig, CorsConfig})`, mocked `UserRepository`) — allowed-origin preflight + actual request get the allow-origin grant; foreign origin: 403 preflight rejection, NO allow-origin header, NO wildcard, never a 500; Origin-less requests proceed normally → `config/CorsConfig.java` (single origin `http://localhost:3000`, explicit methods/headers, no wildcard).
+- [x] 3.7–3.8 RED→GREEN (verified): `RateLimitFilterTest` (4 threat-matrix cases) + `exception/RateLimitExceededException.java` (carries `retryAfterSeconds`) + `config/RateLimitFilter.java` (bucket4j `OncePerRequestFilter`, `ConcurrentHashMap<String, Bucket>`, key = first `X-Forwarded-For` else remote addr, 429 ApiError-shaped envelope + `Retry-After`, fail-open on internal failure) + `config/RateLimitConfig.java` (`@ConfigurationProperties app.ratelimit.*`, `FilterRegistrationBean` for `/api/**`, highest precedence).
+
+### TDD Cycle Evidence (Phase 3 — all executed; no Docker involved)
+
+| Task | Test File | Layer | Safety Net | RED | GREEN | TRIANGULATE | REFACTOR |
+|------|-----------|-------|------------|-----|-------|-------------|----------|
+| 3.1–3.2 | `security/PasswordEncoderTest.java` | Unit | ✅ AppConfigurationPropertiesTest 7/7 baseline | ✅ Compile failure (`SecurityConfig` missing) | ✅ 3/3 pass | ✅ 3 cases (real bcryptjs `$2b$10$` pair, own-plaintext round-trip incl. wrong plaintext, cost-10 format) + fixed an over-claimed constant after a real FAILED run | ✅ Clean |
+| 3.3–3.4 | `util/SanitizerTest.java` | Unit | ✅ 7/7 baseline | ✅ Compile failure (`Sanitizer` missing) | ✅ 11/11 pass | ✅ 8 reject payloads + 3 accept paths (unicode, null/blank, punctuation) | ✅ Clean (3 regex classes extracted to a list) |
+| 3.5–3.6 | `config/CorsConfigTest.java` | Web slice (`@WebMvcTest` + MockMvc) | ✅ 7/7 baseline | ✅ Compile failure (`CorsConfig` missing) | ✅ 4/4 pass | ✅ 4 scenarios (preflight allow, actual allow, foreign deny not-500, no-Origin pass) | ➖ None needed |
+| 3.7–3.8 | `config/RateLimitFilterTest.java` | Unit (MockFilterChain-style harness) | ✅ 7/7 baseline | ✅ Compile failure (filter/exception missing) | ✅ 4/4 pass | ✅ 4 threat-matrix scenarios (429 envelope + Retry-After, global bucket, XFF independence, fail-open) | ➖ None needed |
+
+### Test Summary (Phase 3)
+- **Total tests written**: 22 (3 + 11 + 4 + 4)
+- **Total tests passing**: 22; combined run with Phase 1 regression: **29/29** (`./mvnw -o test -Dtest=PasswordEncoderTest,SanitizerTest,CorsConfigTest,RateLimitFilterTest,AppConfigurationPropertiesTest` → BUILD SUCCESS)
+- **Layers used**: Unit (18), Web slice (4). No Testcontainers, no Docker, no live MySQL/Mongo.
+- **Approval tests**: None — no refactoring of existing logic.
+
+### Work Unit Evidence (Unit 3: Security plumbing)
+
+- **Focused test command**: `.\mvnw.cmd -o test "-Dtest=PasswordEncoderTest,SanitizerTest,CorsConfigTest,RateLimitFilterTest,AppConfigurationPropertiesTest"` → **29/29 PASS** (observed).
+- **Runtime harness**: CORS behavior executed through a real Spring Security filter chain in the `@WebMvcTest` slice (preflight 200/403, allow-origin headers). Rate limit executed against the real `RateLimitFilter` + bucket4j buckets (429 + `Retry-After` observed). Full boot against Aiven/MySQL not attempted (out of this slice; domain wiring remains Docker-gated from Phase 2). Live curl harness against a running instance remains a Phase 4+/verify activity.
+- **Rollback boundary**: `git revert add67e2 da16db3 4363d4f c012856` (or revert `config/SecurityConfig.java`, `config/CorsConfig.java`, `config/RateLimitConfig.java`, `config/RateLimitFilter.java`, `exception/RateLimitExceededException.java`, `util/`; no prior-phase files touched except tasks.md marks).
+
+### Files Changed (Phase 3)
+
+| File | Action | What |
+|------|--------|------|
+| `src/main/java/com/sena/mysqlwithjpa/config/SecurityConfig.java` | Created | BCrypt encoder (strength 10) + permit-all chain, CSRF/form-login/basic off, cors() enabled |
+| `src/test/java/com/sena/mysqlwithjpa/security/PasswordEncoderTest.java` | Created | Cross-stack `$2b$10$` verification (bcryptjs-generated pair), round-trip, cost check |
+| `src/main/java/com/sena/mysqlwithjpa/util/Sanitizer.java` | Created | `requireClean` blocklist: HTML tags, `on*=`, `../` traversal |
+| `src/main/java/com/sena/mysqlwithjpa/util/SanitizationException.java` | Created | Violation type (→ 400 mapping in Phase 4) |
+| `src/test/java/com/sena/mysqlwithjpa/util/SanitizerTest.java` | Created | 11 cases |
+| `src/main/java/com/sena/mysqlwithjpa/config/CorsConfig.java` | Created | Single-origin CORS source (no wildcard) |
+| `src/test/java/com/sena/mysqlwithjpa/config/CorsConfigTest.java` | Created | 4 threat-matrix web-slice cases |
+| `src/main/java/com/sena/mysqlwithjpa/config/RateLimitFilter.java` | Created | bucket4j per-IP filter, 429 envelope + Retry-After, fail-open |
+| `src/main/java/com/sena/mysqlwithjpa/config/RateLimitConfig.java` | Created | `app.ratelimit.*` binding + `/api/**` registration |
+| `src/main/java/com/sena/mysqlwithjpa/exception/RateLimitExceededException.java` | Created | Carries retry-after seconds |
+| `src/test/java/com/sena/mysqlwithjpa/config/RateLimitFilterTest.java` | Created | 4 threat-matrix cases |
+| `openspec/changes/rest-api-redesign/tasks.md` | Modified | 3.1–3.8 marked [x] |
+
+### Commits (Phase 3, branch `rest-api-redesign/pr-3-security`)
+
+- `add67e2` feat(security): add BCrypt PasswordEncoder and permit-all security chain
+- `da16db3` feat(security): add input sanitizer rejecting XSS and path-traversal payloads
+- `4363d4f` feat(security): restrict CORS to the http://localhost:3000 frontend
+- `c012856` feat(security): add global per-IP bucket4j rate limiting with 429 envelope
+
+### Deviations from Design (Phase 3)
+
+1. **429 rendered by the filter itself, not by `ExceptionController`** — design Decision 3 routes `RateLimitExceededException` through the advice, but servlet filters run before the DispatcherServlet, so advice can never see filter-thrown exceptions. The filter renders the identical ApiError-shaped JSON + `Retry-After`; the 429 advice handler in task 4.5 still lands as defense-in-depth for MVC-side throws.
+2. **`.cors(withDefaults())` lives in `SecurityConfig`** — Spring Security only applies its `CorsFilter` when `cors()` is enabled on the chain; the dedicated `CorsConfig` bean carries the policy (design intent preserved).
+3. **Known-hash constant is a freshly generated bcryptjs pair, not a production dump value** — no production dump is present in this repo. The constant is a real `$2b$10$` hash of the documented plaintext `"password"` generated with bcryptjs locally; the earlier well-known jBCrypt sample constant turned out to NOT be a hash of `"password"` (caught by a real failing run of 3.1). A dump-derived pair can replace it without changing the test logic.
+4. **`SanitizationException` added** beyond the design file table — the violation type "mapped to 400" needs a concrete class; its `@ExceptionHandler` wiring belongs to Phase 4 (`ExceptionController`).
+
+### Issues / Risks (Phase 3)
+
+- **PR budget**: Phase 3 slice = **689 changed lines** (681+, 8− across 12 `src/` files + tasks.md marks), over the 400 budget as one PR. Honest commit-boundary split: **PR 3a** = `add67e2` + `da16db3` (encoder + sanitizer ≈ 230 lines) → **PR 3b** = `4363d4f` (CORS ≈ 122 lines) → **PR 3c** = `c012856` (rate limit ≈ 337 lines). Every commit is independently green and revertable; do not shrink code to fit.
+- **Test `src/test/resources/application.properties`** still shadows the main config (Phase 2 note); the `@WebMvcTest` slice boots fine with it because the web slice never initializes JPA/Mongo.
+- Mockito JDK self-attach warning remains cosmetic (Maven-surefire agent config out of scope).
+
+## Status
+
+14/34 tasks verified (Phases 1 + 3 complete and tested); 2.1–2.9 authored but **UNVERIFIED (Docker unavailable)**. Next: Phase 2 Docker verification run, then Phase 4 (Core CRUD) on branch `rest-api-redesign/pr-4-core` stacked on PR 3. Not ready for archive.
