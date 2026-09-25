@@ -1,45 +1,57 @@
 package com.sena.mysqlwithjpa.controller;
 
-import com.sena.mysqlwithjpa.entity.User;
-import com.sena.mysqlwithjpa.repository.UserRepository;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.stereotype.Controller;
+import com.sena.mysqlwithjpa.dto.UserRequest;
+import com.sena.mysqlwithjpa.dto.UserResponse;
+import com.sena.mysqlwithjpa.service.UserService;
+import jakarta.validation.Valid;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.validation.annotation.Validated;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.ResponseBody;
+import org.springframework.web.bind.annotation.ResponseStatus;
+import org.springframework.web.bind.annotation.RestController;
 
-@Controller // This means that this class is a Controller
-@RequestMapping(path="/demo") // This means URL's start with /demo (after Application path)
+/**
+ * User resource, frozen route table (rest-api-redesign design Decision 1).
+ * The legacy server-side {@code /demo/**} endpoints are gone — they return 404.
+ * All error conditions flow through {@link ExceptionController}'s ApiError
+ * envelope; passwords are write-only inbound and never leave the service.
+ */
+@RestController
+@RequestMapping("/api/users")
 public class MainController {
-    private static final Logger log = LoggerFactory.getLogger(MainController.class);
 
-    private final UserRepository userRepository;
+    private final UserService userService;
 
-    @Autowired // This means to get the bean called userRepository
-    public MainController(UserRepository userRepository) {
-        this.userRepository = userRepository;
+    public MainController(UserService userService) {
+        this.userService = userService;
     }
 
-    // Legacy demo endpoint: `User` no longer carries generic name/email columns;
-    // writes are superseded by POST /api/users (rest-api-redesign Phase 4).
-    @PostMapping(path="/add")
-    public @ResponseBody String addNewUser(@RequestParam String name
-            , @RequestParam String email) {
-        log.warn("Solicitud rechazada en endpoint legado /demo/add: name={}", name);
-        throw new UnsupportedOperationException(
-                "Legacy /demo/add was removed with the usuario entity migration; use POST /api/users");
+    @PostMapping
+    public ResponseEntity<UserResponse> create(
+            @Validated(UserRequest.OnCreate.class) @RequestBody UserRequest request) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(userService.create(request));
     }
 
-    @GetMapping(path="/all")
-    public @ResponseBody Iterable<User> getAllUsers() {
+    @GetMapping("/{id}")
+    public UserResponse getById(@PathVariable Integer id) {
+        return userService.findById(id);
+    }
 
-        log.info("Solicitando la lista de todos los usuarios registrados");
+    @PutMapping("/{id}")
+    public UserResponse update(@PathVariable Integer id, @Valid @RequestBody UserRequest request) {
+        return userService.update(id, request);
+    }
 
-        // This returns a JSON or XML with the users
-        return userRepository.findAll();
+    @DeleteMapping("/{id}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void delete(@PathVariable Integer id) {
+        userService.delete(id);
     }
 }

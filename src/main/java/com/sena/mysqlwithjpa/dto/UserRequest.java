@@ -32,7 +32,11 @@ public record UserRequest(
         Rol rol,
         TipoApoyo tipoApoyo) {
 
-    /** Bean-validation group activated by the controller on POST (creation). */
-    public interface OnCreate {
+    /**
+     * Bean-validation group activated by the controller on POST (creation).
+     * Extends {@link Default} so the non-grouped constraints (the required
+     * fields) keep validating when this group is selected.
+     */
+    public interface OnCreate extends jakarta.validation.groups.Default {
     }
 }
