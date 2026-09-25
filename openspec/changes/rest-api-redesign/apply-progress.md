@@ -430,3 +430,49 @@ None — implementation matches design Decision 6 exactly (per-level collections
 ## Status
 
 27/34 tasks verified (Phases 1, 3, 4, 6 complete + Phase 5 controller slice tested � 82/82 green in this environment); 2.1�2.9 and 5.1�5.2 **UNVERIFIED (Docker unavailable)** � overall Phase 5 status: **partial**. Next: Phase 2+5 Docker verification run, then Phase 7 (docs). Not ready for archive.
+
+## Apply Progress: Phase 7 (Documentation & Final Verification, PR 7 branch) — PARTIAL
+
+**Branch**: `rest-api-redesign/pr-7-docs` (stacked on `rest-api-redesign/pr-5-search` @ 6895c19; stacked-to-main preserved). **Docker: not required for the docs themselves** — but gates 7.4 (full suite) and 7.5 (Aiven DDL query) cannot be completed in this environment and stay unchecked with explicit unblock instructions in tasks.md.
+
+- [x] 7.1 `docs/ARCHITECTURE.md` created: layered design diagram, frozen route table (design Decision 1), trigger ownership model, security components (BCrypt/CORS/rate limit/sanitizer), Mongo logging, env-var contract, and an honest verification-status table.
+- [x] 7.2 `docs/STEP_BY_STEP.md` created: prerequisites (Java 21, Maven wrapper, Docker only for Testcontainers), env-var table, `.env` usage, `compose.yaml` credentials documented as dev-only and distinct from production, test commands split into full / Docker-free / Docker-required slices, boot-against-Aiven walkthrough.
+- [x] 7.3 `docs/queries/SEARCH_AND_PAGINATION.md` created: derived AND/OR query methods, OR-term numeric parsing contract, 7-record clamp with observed examples, `PagedModel` metadata shape (`$.page.*`), parameterized-by-construction guarantee with the `Ana'' OR ''1''=''1` example. Documents explicitly that the repository integration tests (5.1/5.2) remain pending the Docker run.
+- [ ] 7.4 Final gate — **partial, UNCHECKED**. Ran the full non-container slice: `.\mvnw.cmd -o test "-Dtest=PasswordEncoderTest,SanitizerTest,CorsConfigTest,RateLimitFilterTest,AppConfigurationPropertiesTest,UserServiceTest,UserControllerTest,UserSearchControllerTest,LogServiceTest"` → **82/82 PASS, 0 failures/errors (observed, BUILD SUCCESS)**. Proposal success criteria verified here: legacy `/demo/add` + `/demo/all` + POST `/login` return 404 (regression tests green inside `UserControllerTest`); 429 envelope + `Retry-After` and CORS allow/deny behavior green in their suites; config has no literal credentials (`AppConfigurationPropertiesTest` asserts it); repo grep shows only `.env.example` placeholders and dev-only `compose.yaml` values; `git check-ignore .env` confirmed and `git status` is clean of `.env`. **What completes 7.4: a Docker-enabled run of `./mvnw test -Dtest=SchemaTriggersTest,UserRepositoryTest,UserSearchRepositoryTest`** (bare `./mvnw test` also works on a Docker-enabled host — it additionally picks up `MysqlwithjpaApplicationTests`, which needs Testcontainers). Until then, "triggers own their columns in integration tests" and "Mongo collections per level (live)" stay unproven.
+- [ ] 7.5 **BLOCKED, UNCHECKED** — needs Aiven MySQL query access, unavailable from this tooling. Run on the production instance: `SHOW CREATE TABLE usuario` and/or `SELECT COLUMN_DEFAULT FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=''defaultdb'' AND TABLE_NAME=''usuario'' AND COLUMN_NAME=''fecha_registro'';` If `COLUMN_DEFAULT` is `CURRENT_TIMESTAMP`, the `fecha_registro` mapping MAY switch to fully DB-owned (`insertable=false, updatable=false`); record the outcome in `docs/ARCHITECTURE.md`. Phase 2.9 required no mapping change (`updatable=false` + `@DynamicInsert` is safe under both DDLs), so no code change is expected.
+
+### Executed verification (this environment)
+
+- **Focused test command**: `.\mvnw.cmd -o test "-Dtest=PasswordEncoderTest,SanitizerTest,CorsConfigTest,RateLimitFilterTest,AppConfigurationPropertiesTest,UserServiceTest,UserControllerTest,UserSearchControllerTest,LogServiceTest"` → **82/82 PASS (observed)**.
+- **Runtime harness**: N/A for the docs work units themselves (docs-only). The web-slice suites re-executed above run through the real Spring Security filter chain + DispatcherServlet. Live boot against Aiven remains a manual STEP_BY_STEP activity.
+- **Rollback boundary**: revert commits `9c4db1d`, `4217654`, `851315b`, `c2ef81e` and the apply-progress commit (i.e. `git revert` them or delete `docs/` and restore the four tasks.md checkbox lines). No code or prior-phase artifacts touched.
+
+### Files Changed (Phase 7)
+
+| File | Action | What |
+|------|--------|------|
+| `docs/ARCHITECTURE.md` | Created | Layered architecture, frozen routes, trigger ownership, security, Mongo logging, env contract, verification status |
+| `docs/STEP_BY_STEP.md` | Created | Build/run guide, env vars, dev-only compose credentials, Docker requirement, Aiven boot |
+| `docs/queries/SEARCH_AND_PAGINATION.md` | Created | Derived AND/OR queries, 7-record max, PagedModel metadata, injection-safety example, pending-integration-test note |
+| `openspec/changes/rest-api-redesign/tasks.md` | Modified | 7.1–7.3 [x]; 7.4/7.5 unchecked with explicit unblock instructions |
+| `openspec/changes/rest-api-redesign/apply-progress.md` | Modified | This section |
+
+### Commits (Phase 7, branch `rest-api-redesign/pr-7-docs`)
+
+- `9c4db1d` docs(architecture): document layered design, frozen routes, trigger ownership and security components
+- `4217654` docs(setup): add build/run guide with env-var contract and dev-only compose credentials
+- `851315b` docs(queries): document AND/OR searches, 7-record clamp and parameterized-by-construction guarantee
+- `c2ef81e` chore(openspec): mark docs tasks 7.1-7.3 complete, record 7.4/7.5 unblock conditions
+
+### Deviations from Design (Phase 7)
+
+None — docs describe the implementation as built (including the recorded Phase 3/4 deviations such as the filter-rendered 429 envelope).
+
+### Issues / Risks (Phase 7)
+
+- **PR budget**: Phase 7 slice = **280 changed lines** (275+, 5− across 4 files) — WITHIN the 400 budget, single PR, no split needed.
+- End-to-end green gate (7.4) and prod-DDL question (7.5) remain open; both are environment-access issues, not code issues.
+
+## Status
+
+30/34 tasks verified (Phases 1, 3, 4, 6 complete; Phase 5 controller slice tested; Phase 7 docs delivered — 82/82 green in this environment). Remaining open: 2.1–2.9, 5.1, 5.2 (Docker run), 7.4 (same Docker run completes it), 7.5 (Aiven query). Not ready for archive.
