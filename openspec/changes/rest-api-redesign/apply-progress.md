@@ -368,3 +368,65 @@ None â€” implementation matches design Decision 6 exactly (per-level collections
 ## Status
 
 25/34 tasks verified (Phases 1, 3, 4, 6 complete and tested â€” 70/70 green in this environment); 2.1â€“2.9 still **UNVERIFIED (Docker unavailable)**; Phase 5 and Phase 7 pending. Next: Phase 2 Docker verification run, then Phase 5 (Search & Pagination), then Phase 7 docs. Not ready for archive.
+
+## Apply Progress: Phase 5 (Search & Pagination, PR 5 branch) — PARTIAL (controller slice VERIFIED; repository slice Docker-gated)
+
+**Branch**: `rest-api-redesign/pr-5-search` (stacked on `rest-api-redesign/pr-6-mongo-logging` @ dc572eb; stacked-to-main preserved — the later-merged PR 6 became the base when the user rescheduled Phase 5 after it). **Docker daemon: UNAVAILABLE (user directive — no Docker this run; authorized protective downgrade)**. 5.3/5.4 ran the FULL RED?GREEN cycle for real (MockMvc + Mockito); 5.1 was NOT authored and 5.2 is implemented but UNVERIFIED against a real DB.
+
+- [ ] 5.1 **NOT authored (user directive, Docker down)**: `UserSearchRepositoryTest` (@DataJpaTest + Testcontainers) stays unwritten AND unchecked; pending Docker verification run together with Phase 2.
+- [ ] 5.2 **Implemented, UNVERIFIED**: derived `Page<User> findByPrimerNombreAndDocumento(String, Long, Pageable)` + `Page<User> findByPrimerNombreOrPrimerApellidoOrDocumento(String, String, Long, Pageable)` added to `UserRepository` (compile-verified; wiring exercised via mocked-repository service tests; no real-DB run).
+- [x] 5.3 RED (verified): `UserSearchControllerTest` (@WebMvcTest(MainController.class) + MockMvc, mocked `UserService`, 9 tests) — RED observed as compilation failure (25 errors: `findAllUsers`/`searchAnd`/`searchOr` absent).
+- [x] 5.4 GREEN (verified): `GET /api/users` paged listing, `GET /api/users/search/and`, `GET /api/users/search/or` on `MainController`; clamp `PageRequest.of(page, Math.min(size, 7))` (design Decision 5); controller parses OR `term` to `Long` when numeric, else `null` for the documento branch (design contract); service delegates via `PagedModel<UserResponse>` (password-free by construction) — 9/9 PASS observed, plus 3 new `UserServiceTest` delegation/mapping tests ? 82/82 full regression PASS (observed).
+
+### TDD Cycle Evidence (Phase 5 — controller/service slices executed for real; repository slice Docker-gated)
+
+| Task | Test File | Layer | Safety Net | RED | GREEN | TRIANGULATE | REFACTOR |
+|------|-----------|-------|------------|-----|-------|-------------|----------|
+| 5.1 | `repository/UserSearchRepositoryTest.java` | Integration (Testcontainers) | — | ? SKIPPED (user directive: no Docker) — NOT authored | ? UNVERIFIED | ? | ? |
+| 5.2 | (derived finders; covered only via mocked repository) | Repository | ? 70/70 baseline | ? Test-first: controller/service tests reference the finders before they existed (compile RED) | ?? Compile-verified only; real-DB GREEN pending Docker | ?? Real-DB scenarios pending (5.1) | ? Signature-only code |
+| 5.3–5.4 | `controller/UserSearchControllerTest.java` | Web slice (@WebMvcTest) | ? 70/70 baseline | ? Compile failure (25 errors, methods absent) — observed | ? 9/9 pass — observed | ? 9 spec-mapped scenarios (7-record page + metadata, size=50 clamp via ArgumentCaptor, partial page 3/10/2, out-of-range empty, AND match, AND empty-200, OR 12-match cap, numeric-term Long parse, injection-shaped literal) | ? Clean (term parser = one pure private static method) |
+| 5.4 (service) | `service/UserServiceTest.java` (+3 tests) | Unit (Mockito, mocked repository) | ? 70/70 baseline | ? Test-first (same compile RED) | ? 21/21 pass — observed | ? findAll paging meta mapping, AND criteria pass-through, OR term fanned to both name branches + Long documento | ? None needed |
+
+### Test Summary (Phase 5)
+- **Total tests written**: 12 (9 `UserSearchControllerTest` + 3 `UserServiceTest`)
+- **Total tests passing**: 12; full regression: **82/82 PASS** (`./mvnw -o test -Dtest=UserServiceTest,UserControllerTest,UserSearchControllerTest,PasswordEncoderTest,SanitizerTest,CorsConfigTest,RateLimitFilterTest,AppConfigurationPropertiesTest,LogServiceTest`, BUILD SUCCESS — observed)
+- **Layers used**: Unit (3), Web slice (9). No Testcontainers, no Docker, no live MySQL/Mongo.
+- **Approval tests**: None — no refactoring of existing logic; all additions are new behavior.
+
+### Work Unit Evidence (Unit 5: Search & pagination)
+
+- **Focused test command**: `.\mvnw.cmd -o test "-Dtest=UserSearchControllerTest,UserServiceTest"` ? **30/30 PASS** (observed). Full regression: **82/82 PASS** (observed).
+- **Runtime harness**: the full web slice executed through the real Spring Security filter chain + DispatcherServlet (clamp, paging metadata shape `$.page.*`, injection-shaped term reaching the service verbatim). Real harness `GET /api/users?page=0&size=50` against a live DB NOT RUNNABLE — no Docker; the repository finders' DB behavior is the top residual risk, carried with Phase 2's gate.
+- **Rollback boundary**: `git revert 623218b 1c73acb` (or revert the 3 production methods + 2 derived finders and the 2 test additions; no prior-phase behavior touched).
+
+### Files Changed (Phase 5)
+
+| File | Action | What |
+|------|--------|------|
+| `src/main/java/com/sena/mysqlwithjpa/repository/UserRepository.java` | Modified | +2 derived paged finders (parameterized by construction) |
+| `src/main/java/com/sena/mysqlwithjpa/service/UserService.java` | Modified | `findAllUsers` / `searchAnd` / `searchOr` returning `PagedModel<UserResponse>` |
+| `src/main/java/com/sena/mysqlwithjpa/controller/MainController.java` | Modified | `GET /api/users`, `/search/and`, `/search/or`; `Math.min(size, 7)` clamp; numeric OR-term parse |
+| `src/test/java/com/sena/mysqlwithjpa/controller/UserSearchControllerTest.java` | Created | 9 MockMvc spec scenarios |
+| `src/test/java/com/sena/mysqlwithjpa/service/UserServiceTest.java` | Modified | +3 delegation/mapping tests |
+| `openspec/changes/rest-api-redesign/tasks.md` | Modified | 5.3/5.4 [x]; 5.1/5.2 unchecked with Docker-gate note |
+
+### Commits (Phase 5, branch `rest-api-redesign/pr-5-search`)
+
+- `1c73acb` feat(users): add derived AND/OR search queries to UserRepository (12 lines; compile-only, DB-unverified)
+- `623218b` feat(users): expose paged listing and AND/OR search endpoints clamped to 7 records (319+/4-)
+
+### Deviations from Design (Phase 5)
+
+1. **Responses use `PagedModel<UserResponse>`, not `Page`** — Spring Data's stable serialization surface (`$.content`, `$.page.{size,number,totalElements,totalPages}`); the design only pins the metadata contract (page, size, totals), which PagedModel satisfies.
+2. **Base branch is PR 6, not PR 5's original plan of PR 4** — consequence of the user-rescheduled chain order (Phase 6 first); stacked-to-main semantics preserved.
+3. **5.1 not authored, 5.2 unverified** — per explicit user directive (no Docker); both remain unchecked with the note in tasks.md.
+
+### Issues / Risks (Phase 5)
+
+- **TOP RISK — repository layer unverified**: `findByPrimerNombreAndDocumento` / `findByPrimerNombreOrPrimerApellidoOrDocumento` have never run against MySQL (derived-name resolution to `primerNombre`/`primerApellido`/`documento` columns and the `null`-documento OR branch semantics are compile-plus-mock verified only). Run `./mvnw test -Dtest=UserSearchRepositoryTest` once Docker is available, together with Phase 2's suite — then mark 5.1/5.2.
+- **PR budget**: Phase 5 slice = **335 changed lines** (331+, 4- across 6 files), WITHIN the 400 budget — single PR, no split needed.
+- Mockito JDK self-attach warning remains cosmetic.
+
+## Status
+
+27/34 tasks verified (Phases 1, 3, 4, 6 complete + Phase 5 controller slice tested — 82/82 green in this environment); 2.1–2.9 and 5.1–5.2 **UNVERIFIED (Docker unavailable)** — overall Phase 5 status: **partial**. Next: Phase 2+5 Docker verification run, then Phase 7 (docs). Not ready for archive.
