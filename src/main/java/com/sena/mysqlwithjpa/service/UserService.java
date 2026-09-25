@@ -8,6 +8,8 @@ import com.sena.mysqlwithjpa.service.exception.DuplicateResourceException;
 import com.sena.mysqlwithjpa.service.exception.NotFoundException;
 import com.sena.mysqlwithjpa.service.log.LogService;
 import com.sena.mysqlwithjpa.util.Sanitizer;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.web.PagedModel;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
@@ -63,6 +65,29 @@ public class UserService {
 
     public UserResponse findById(Integer id) {
         return UserResponse.from(findUser(id));
+    }
+
+    /**
+     * Read-side queries (spec user-search-pagination). Thin delegations to the
+     * derived repository finders; the resulting {@link UserResponse} views are
+     * password-free by construction. A {@code null} {@code documento} on the OR
+     * search is intentional: the derived query's documento branch then never
+     * matches, which matches the controller contract for non-numeric terms.
+     */
+    public PagedModel<UserResponse> findAllUsers(Pageable pageable) {
+        return new PagedModel<>(userRepository.findAll(pageable).map(UserResponse::from));
+    }
+
+    public PagedModel<UserResponse> searchAnd(String primerNombre, Long documento, Pageable pageable) {
+        return new PagedModel<>(userRepository
+                .findByPrimerNombreAndDocumento(primerNombre, documento, pageable)
+                .map(UserResponse::from));
+    }
+
+    public PagedModel<UserResponse> searchOr(String term, Long documento, Pageable pageable) {
+        return new PagedModel<>(userRepository
+                .findByPrimerNombreOrPrimerApellidoOrDocumento(term, term, documento, pageable)
+                .map(UserResponse::from));
     }
 
     public UserResponse update(Integer id, UserRequest request) {

@@ -17,9 +17,15 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.web.PagedModel;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -326,5 +332,44 @@ class UserServiceTest {
 
         assertThrows(NotFoundException.class, () -> userService.delete(99));
         verify(userRepository, never()).deleteById(any());
+    }
+
+    // --- Phase 5: read-side search/pagination delegation (spec user-search-pagination) ---
+
+    @Test
+    void findAllUsersDelegatesThePageableAndMapsToPasswordFreeResponses() {
+        Pageable request = PageRequest.of(0, 7);
+        when(userRepository.findAll(request))
+                .thenReturn(new PageImpl<>(List.of(existingUser()), request, 8));
+
+        PagedModel<UserResponse> page = userService.findAllUsers(request);
+
+        assertEquals(1, page.getContent().size());
+        assertEquals(8, page.getMetadata().totalElements());
+        assertEquals("Ana", page.getContent().getFirst().primerNombre());
+    }
+
+    @Test
+    void searchAndForwardsBothCriteriaAndPageableToTheDerivedQuery() {
+        Pageable request = PageRequest.of(1, 7);
+        when(userRepository.findByPrimerNombreAndDocumento("Ana", 1234567890L, request))
+                .thenReturn(Page.empty(request));
+
+        PagedModel<UserResponse> page = userService.searchAnd("Ana", 1234567890L, request);
+
+        assertTrue(page.getContent().isEmpty());
+        verify(userRepository).findByPrimerNombreAndDocumento("Ana", 1234567890L, request);
+    }
+
+    @Test
+    void searchOrPassesTheTermToBothNameBranchesAndTheParsedDocumento() {
+        Pageable request = PageRequest.of(0, 7);
+        when(userRepository.findByPrimerNombreOrPrimerApellidoOrDocumento("1122334455", "1122334455", 1122334455L, request))
+                .thenReturn(Page.empty(request));
+
+        PagedModel<UserResponse> page = userService.searchOr("1122334455", 1122334455L, request);
+
+        assertTrue(page.getContent().isEmpty());
+        verify(userRepository).findByPrimerNombreOrPrimerApellidoOrDocumento("1122334455", "1122334455", 1122334455L, request);
     }
 }
