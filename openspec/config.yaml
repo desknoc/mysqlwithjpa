@@ -1,0 +1,28 @@
+# SDD configuration — mysqlwithjpa
+persistence: hybrid
+strict_tdd: true
+
+project:
+  key: julia/mysqlwithjpa
+  root: .
+  stack:
+    language: "Java 21"
+    framework: "Spring Boot 4.1.0"
+    build_tool: "Maven (wrapper: ./mvnw, ./mvnw.cmd)"
+    persistence: "Spring Data JPA (Hibernate) against MySQL (mysql-connector-j)"
+    other:
+      - "spring-boot-starter-webmvc"
+      - "spring-boot-starter-validation"
+      - "Thymeleaf CRUD being redesigned into a pure REST microservice; static assets currently live under src/main/resources/static"
+  conventions:
+    package_root: "com.sena.mysqlwithjpa"
+    layering: "controller -> repository (Spring Data) -> entity; global exception handling via ExceptionController/ApiError"
+
+testing:
+  test_command: "./mvnw test"
+  layers:
+    unit: "JUnit 5 + Mockito (spring-boot-starter-webmvc-test / data-jpa-test)"
+    integration: "@SpringBootTest + @Import(TestcontainersConfiguration)"
+    containerized: "Testcontainers MySQL (spring-boot-testcontainers, testcontainers-junit-jupiter, testcontainers-mysql) — requires Docker; dev alternative: compose.yaml"
+  coverage: "none configured (jacoco not present)"
+  notes: "Requires Java 21 and, for Testcontainers-based tests, a running Docker daemon."

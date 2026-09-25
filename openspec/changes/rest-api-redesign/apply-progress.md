@@ -1,0 +1,478 @@
+# Apply Progress: rest-api-redesign — Phases 1–2
+
+**Change**: rest-api-redesign
+**Mode**: Strict TDD
+**Delivery**: chained PRs, chain strategy `stacked-to-main`
+**Branches**: `rest-api-redesign/pr-1-foundation` (Phase 1), `rest-api-redesign/pr-2-domain` (Phase 2, stacked on PR 1 @ 569faa6)
+**Date**: 2026-09-24
+
+## Completed Tasks (6/34 verified; Phase 2 authored but UNVERIFIED)
+
+- [x] 1.1 RED: `AppConfigurationPropertiesTest` — 7 assertions against committed `application.properties` — FAILED against previous hardcoded config (7/7 failures observed)
+- [x] 1.2 GREEN: pom.xml — added `spring-boot-starter-security` (crypto/spring-context), `spring-boot-starter-data-mongodb`, `com.bucket4j:bucket4j-core` — `./mvnw compile` OK
+- [x] 1.3 GREEN: `application.properties` rewritten per design Decision 10 — config test now 7/7 PASS
+- [x] 1.4 GREEN: `.env.example` with placeholders only; `.env` gitignored (verified via `git check-ignore` and a scratch `.env` file, then removed)
+- [x] 1.5 REFACTOR/cleanup: deleted `src/main/resources/static/**` (3 files)
+- [x] 1.6 Verified `compose.yaml` carries only Spring Initializr dev placeholders (`myuser`/`secret`), distinct from production Aiven credentials — no change needed; dev-only nature is documented in Phase 7.2
+
+## TDD Cycle Evidence
+
+| Task | Test File | Layer | Safety Net | RED | GREEN | TRIANGULATE | REFACTOR |
+|------|-----------|-------|------------|-----|-------|-------------|----------|
+| 1.1 | `src/test/java/com/sena/mysqlwithjpa/config/AppConfigurationPropertiesTest.java` | Unit | N/A (new test; no prior unit tests) | ✅ 7/7 failed against hardcoded props | ✅ 7/7 passed after 1.3 | ✅ 7 distinct config scenarios (placeholders, URL, ssl-mode REQUIRED, no DISABLED, ddl-auto=validate, open-in-view=false, mongo/ratelimit placeholders, no literal credentials) | ➖ None needed (config files) |
+| 1.2 | — (compile gate) | Build | N/A | ➖ Skipped: dependency addition, no logic | ✅ `mvnw compile` OK | ➖ Skipped: structural only | ➖ |
+| 1.3 | (same as 1.1) | Unit | — | — | ✅ 7/7 passed | ➖ Covered by 1.1 triangulation | ✅ Kept logging settings; translated to English |
+| 1.4 | — (gitignore contract) | Repo | N/A | ➖ Skipped: structural | ✅ `git check-ignore .env` confirmed; scratch `.env` not listed by `git status` | ➖ Single behavior | ➖ |
+| 1.5 | — (deletion) | Repo | N/A | ➖ Skipped: structural deletion | ✅ static tree removed, compile still OK | ➖ | ➖ |
+| 1.6 | — (inspection) | Repo | N/A | ➖ Skipped: verification-only task | ✅ compose.yaml values are dev placeholders, not production | ➖ | ➖ |
+
+Triangulation skipped for 1.2/1.4/1.5/1.6: structural/cleanup tasks with a single verifiable outcome (per strict-tdd skip criteria).
+
+### Test Summary
+- **Total tests written**: 7
+- **Total tests passing**: 7 (`mvnw test -Dtest=AppConfigurationPropertiesTest` green)
+- **Layers used**: Unit (7)
+- **Approval tests**: None — no refactoring of existing logic
+
+## Work Unit Evidence (Unit 1: Foundation)
+
+- **Focused test command**: `.\mvnw.cmd test -Dtest=AppConfigurationPropertiesTest` → 7/7 PASS (RED observed first: 7/7 FAIL)
+- **Runtime harness**: `./mvnw compile` PASS; full `./mvnw test` NOT runnable — Docker daemon unavailable (Testcontainers blocks `MysqlwithjpaApplicationTests`). Spring Boot app boot against Aiven not attempted (no runtime boundary change in this slice beyond config shape; Aiven credentials not available in this environment).
+- **Rollback boundary**: `git revert 16a9c1b 7b83805` (or revert `pom.xml`, `application.properties`, `.gitignore`; restore `static/**` from `Reto4`). No DB touched.
+
+## Files Changed
+
+| File | Action | What |
+|------|--------|------|
+| `pom.xml` | Modified | +spring-boot-starter-security, +spring-boot-starter-data-mongodb, +com.bucket4j:bucket4j-core |
+| `src/main/resources/application.properties` | Modified | Env-var placeholders per design Decision 10; `ddl-auto=validate`; `open-in-view=false`; credentials removed |
+| `.env.example` | Created | Placeholder values only for MYSQL_*, MONGODB_URI, RATE_LIMIT_* |
+| `.gitignore` | Modified | `.env` ignored |
+| `src/main/resources/static/{index.html,js/app.js,css/styles.css}` | Deleted | Legacy static frontend |
+| `src/test/java/com/sena/mysqlwithjpa/config/AppConfigurationPropertiesTest.java` | Created | 7 config-discipline assertions (RED→GREEN) |
+| `openspec/changes/rest-api-redesign/tasks.md` | Modified | Tasks 1.1–1.6 marked [x] |
+
+## Commits
+
+- `16a9c1b` build(rest-api): add spring-security, mongodb and bucket4j dependencies
+- `7b83805` feat(config): externalize datasource credentials to env vars, add .env template, drop legacy static frontend
+
+## Deviations from Design
+
+None — implementation matches design Decision 10. (bucket4j version chosen: current stable 8.x line under `com.bucket4j`; exact coordinate `bucket4j-core`.)
+
+## Issues / Risks
+
+- **Docker daemon unavailable on this machine** — Testcontainers-backed tests (pre-existing `MysqlwithjpaApplicationTests`, and Phase 2/5 repository slices) cannot run here. Phase 1 relied on the unit layer only, as permitted. Flag for the orchestrator: Phases 2 and 5 will BLOCK without Docker.
+- `./mvnw test` (full suite) was NOT run because it triggers the Testcontainers context test and fails without Docker; only the focused unit test was executed per strict-tdd guidance.
+
+## Remaining Tasks
+
+- Phase 2 (2.1–2.9): test schema + entity/enums + repository
+- Phases 3–7 per tasks.md
+- Chain strategy in tasks.md header still reads `pending`; orchestrator resolved `stacked-to-main` for this run.
+
+## Apply Progress: Phase 2 (Domain Mapping, PR 2 branch)
+
+**Docker daemon: UNAVAILABLE on this machine** — all Testcontainers slices were authored under strict RED→GREEN ordering but could NOT be executed. Every Phase 2 task below is therefore **UNVERIFIED** and remains unchecked (`- [ ]`) in tasks.md per the apply gate.
+
+- [ ] 2.1–2.3 RED (authored, unexecuted): `src/test/resources/schema.sql` (full `usuario` DDL + 3 triggers, `^` separators for the compound `validarContrasena` body), `src/test/resources/application.properties` (sql.init wiring, `ddl-auto=validate`; datasource/mongo/ratelimit placeholder keys duplicated verbatim from main so the Phase 1 config contract test still passes — this file shadows the main one on the test classpath), `TestcontainersConfiguration` pinned to `mysql:8.4`, `SchemaTriggersTest` (column set, 3 triggers in information_schema, ddl-auto=validate by context boot plus Environment assertion)
+- [ ] 2.4–2.5 GREEN (authored, compile-verified): enums `TipoDocumento` (CC, TI), `Rol` (ADMIN, USUARIO), `TipoApoyo` (regular, alimentacion, transporte); `User` rewritten per design Decision 7 exactly (`@Table("usuario")`, `@DynamicInsert`, IDENTITY `id_usuario`, `Long documento`, `EnumType.STRING` + columnDefinitions, `@JsonProperty(WRITE_ONLY)` on `contrasena`, `ultima_actualizacion` insertable=false/updatable=false, `fecha_registro` updatable=false)
+- [ ] 2.6–2.7 RED+GREEN (authored): `UserRepositoryTest` round-trip (documento `Long` beyond int range, all fields) + `UserRepository` is now `JpaRepository<User, Integer>` with `existsByDocumento(Long)` / `existsByCorreoElectronico(String)`
+- [ ] 2.8–2.9 RED+GREEN (authored): trigger-ownership tests — `ultima_actualizacion` set by DB default on insert and rewritten by `actualizarFechaUsuario` on update (application never carries the column), null `rol` → `USUARIO` via `rolDefecto` on fresh read, explicit `ADMIN` respected, real 60-char `$2b$10$…` BCrypt hash passes `validarContrasena` byte-identical. **2.9 resolution: no mapping change needed** — `fecha_registro` keeps `updatable=false` with the application setting it on insert; the schema.sql mirror has NO DB default for it. The production-DDL open question (`DEFAULT CURRENT_TIMESTAMP`?) remains open → task 7.5.
+
+### TDD Cycle Evidence (Phase 2 — authoring order only; NO test execution without Docker)
+
+| Task | Test File | Layer | Safety Net | RED | GREEN | TRIANGULATE | REFACTOR |
+|------|-----------|-------|------------|-----|-------|-------------|----------|
+| 2.1–2.3 | `src/test/resources/schema.sql`, `src/test/java/.../repository/SchemaTriggersTest.java` | Integration (Testcontainers) | ✅ AppConfigurationPropertiesTest 7/7 baseline | ✅ Written (would fail: old entity maps table `user`, mySQL container absent) | ⚠️ UNVERIFIED — not executed | ✅ 3 scenarios (column set, triggers, validate-only) | ➖ None |
+| 2.4–2.5 | (covered by 2.3's schema-validate boot + 2.6 round-trip) | Integration | 7/7 baseline | ➖ RED implicit via 2.3 | ⚠️ UNVERIFIED — compile OK only | ➖ Structural (mapping per Decision 7) | ➖ None |
+| 2.6–2.7 | `src/test/java/.../repository/UserRepositoryTest.java` | Integration (Testcontainers) | 7/7 baseline | ✅ Written (would fail: CrudRepository lacked existsBy/finder + old entity fields) | ⚠️ UNVERIFIED — not executed | ✅ round-trip incl. documento beyond int range | ➖ None |
+| 2.8 | (same file — trigger ownership) | Integration (Testcontainers) | 7/7 baseline | ✅ Written (would fail without @DynamicInsert/insertable=false) | ⚠️ UNVERIFIED — not executed | ✅ 4 scenarios (update trigger, null rol default, explicit ADMIN, BCrypt under trigger) | ➖ None |
+| 2.9 | — | Mapping decision | — | ➖ | ⚠️ UNVERIFIED — no change required by current design; prod DDL check deferred to 7.5 | ➖ | ➖ |
+
+### Executed verification (this environment)
+
+- **Focused unit**: `.\mvnw.cmd -o test -Dtest=AppConfigurationPropertiesTest` → PASS (7/7). Proves the new test-classpath `application.properties` shadowing preserves the Phase 1 contract.
+- **Compile**: `.\mvnw.cmd -o test-compile` → PASS (all new tests + entity + repository compile under Spring Boot 4.1).
+- **Runtime harness (repository slices)**: NOT RUNNABLE — no Docker daemon. This is the top risk of this batch.
+- **Rollback boundary**: `git revert aea6cda 6a825c8 12a473a e2b31a5 eb7a736` (or revert `entity/`, `repository/`, `controller/MainController.java`, `src/test/**`, keeping Phase 1 commits untouched).
+
+### Files Changed (Phase 2)
+
+| File | Action | What |
+|------|--------|------|
+| `openspec/.../tasks.md` | Modified | Chain strategy header → `stacked-to-main` (separate tiny commit); 2.1–2.9 stay unchecked (unverified) |
+| `src/test/resources/schema.sql` | Created | `usuario` DDL + triggers `rolDefecto`, `actualizarFechaUsuario`, `validarContrasena`; `^` separator; varchar(255) columns |
+| `src/test/resources/application.properties` | Created | sql.init wiring + verbatim placeholder keys (shadow-safe for Phase 1 test) |
+| `src/test/java/.../TestcontainersConfiguration.java` | Modified (public, `mysql:8.4`) | Reuse for repository slices |
+| `src/test/java/.../repository/SchemaTriggersTest.java` | Created | Table/column-set/trigger/validate-only assertions |
+| `src/main/java/.../entity/{TipoDocumento,Rol,TipoApoyo}.java` | Created | Enums matching the production ENUM columns |
+| `src/main/java/.../entity/User.java` | Rewritten | Full Decision 7 mapping |
+| `src/main/java/.../controller/MainController.java` | Modified | Compile-preserving interim: `/demo/add` no longer writes (entity has no name/email); rejects with UnsupportedOperationException until Phase 4 replaces it. `/demo/all` unchanged |
+| `src/main/java/.../repository/UserRepository.java` | Modified | `JpaRepository<User, Integer>` + `existsByDocumento` / `existsByCorreoElectronico` |
+| `src/test/java/.../repository/UserRepositoryTest.java` | Created | Round-trip + 4 trigger-ownership scenarios |
+
+### Commits (Phase 2, branch `rest-api-redesign/pr-2-domain`)
+
+- `aea6cda` chore(openspec): record resolved chain strategy stacked-to-main
+- `6a825c8` docs(openspec): track rest-api-redesign planning artifacts (proposal, design, specs)
+- `12a473a` test(domain): add usuario test schema with triggers and container wiring
+- `e2b31a5` feat(domain): rewrite User entity onto the usuario table with type enums
+- `eb7a736` feat(domain): upgrade UserRepository to JpaRepository with trigger-ownership tests
+
+### Deviations from Design (Phase 2)
+
+1. **`MainController` touched outside Phases 3–4 scope** — minimal, compile-forcing: the User rewrite removed `name`/`email`, so `/demo/add` cannot compile. It now rejects writes via `UnsupportedOperationException` pointing to Phase 4. `/demo/all` and the `@Controller /demo` mapping are unchanged; Phase 4 still owns the real rewrite and the 404 regression tests.
+2. **schema.sql column sizes are `varchar(255)`** to match Hibernate's validate-time defaults; production column sizes are DBA-owned and unknown here — verify at 2.3's first real run / task 7.5.
+3. **Planning artifacts committed on this branch** (separate `docs(openspec)` commit): proposal/design/exploration/specs/config were untracked; they are the hybrid store's source of truth and should not float uncommitted. Reviewers can exclude that commit from the PR-2 code review.
+4. **`fecha_registro` open question NOT resolved** — design's fallback kept (`updatable=false`, application sets it); test schema has no default. Task 7.5 must confirm the production DDL.
+
+### Issues / Risks (Phase 2)
+
+- **Docker daemon unavailable** — every 2.1–2.9 assertion is authored-only. Do not treat this slice as done; scheduling a Docker-enabled run of `./mvnw test -Dtest=SchemaTriggersTest,UserRepositoryTest` is the immediate gate.
+- **Hibernate validate vs MySQL ENUM column types** is a plausible first-run failure (`enum('CC','TI')` columnDefinitions vs reported JDBC type/length); catch at the Docker run; fix by aligning column definition/length if validation complains.
+
+## Files Changed (cumulative)
+
+| File | Action | What |
+|------|--------|------|
+| `pom.xml` | Modified | +spring-boot-starter-security, +spring-boot-starter-data-mongodb, +com.bucket4j:bucket4j-core |
+| `src/main/resources/application.properties` | Modified | Env-var placeholders per design Decision 10; `ddl-auto=validate`; `open-in-view=false`; credentials removed |
+| `.env.example` | Created | Placeholder values only for MYSQL_*, MONGODB_URI, RATE_LIMIT_* |
+| `.gitignore` | Modified | `.env` ignored |
+| `src/main/resources/static/{index.html,js/app.js,css/styles.css}` | Deleted | Legacy static frontend |
+| `src/test/java/com/sena/mysqlwithjpa/config/AppConfigurationPropertiesTest.java` | Created | 7 config-discipline assertions (RED→GREEN) |
+| `openspec/changes/rest-api-redesign/tasks.md` | Modified | 1.1–1.6 [x]; chain strategy header resolved |
+| `openspec/changes/rest-api-redesign/{proposal,design,exploration}.md`, `specs/**`, `openspec/config.yaml` | Created (tracked) | Planning artifacts committed |
+| `src/test/resources/{schema.sql,application.properties}` | Created | Test schema with 3 triggers; sql.init wiring |
+| `src/test/java/com/sena/mysqlwithjpa/repository/{SchemaTriggersTest,UserRepositoryTest}.java` | Created | Schema + round-trip + trigger ownership (unverified) |
+| `src/test/java/com/sena/mysqlwithjpa/TestcontainersConfiguration.java` | Modified | `mysql:8.4`, public |
+| `src/main/java/com/sena/mysqlwithjpa/entity/{User,TipoDocumento,Rol,TipoApoyo}.java` | Rewritten/Created | Decision 7 mapping |
+| `src/main/java/com/sena/mysqlwithjpa/repository/UserRepository.java` | Modified | JpaRepository + existsBy* |
+| `src/main/java/com/sena/mysqlwithjpa/controller/MainController.java` | Modified | Legacy `/demo/add` write path removed (compile interim) |
+
+## Deviations from Design
+
+Phase 1: None — implementation matches design Decision 10. (bucket4j version chosen: current stable 8.x line under `com.bucket4j`; exact coordinate `bucket4j-core`.)
+
+Phase 2: see "Deviations from Design (Phase 2)" above.
+
+## Issues / Risks
+
+- **Docker daemon unavailable on this machine** — Testcontainers-backed tests (Phase 2 slices, future Phase 5) cannot run here. Phase 2's entire suite is authored but UNVERIFIED; run `./mvnw test -Dtest=SchemaTriggersTest,UserRepositoryTest` on a Docker-enabled host before marking 2.1–2.9 `[x]`.
+- `./mvnw test` (full suite) intentionally NOT run: `MysqlwithjpaApplicationTests` boot requires Testcontainers (and a Mongo URI); only the focused unit test was executed.
+- **PR budget**: Phase 2 slice = **539 changed lines** (additions+deletions across `src/`), above the 400 budget. Honest split for review, at PR-creation time: PR 2a = commits `aea6cda`,`12a473a`,`e2b31a5` (schema + entity, ≈369 lines, compiles standalone) → PR 2b = commit `eb7a736` (repository + trigger tests, ≈172 lines). Do not shrink code to fit; split along commit boundaries as listed.
+
+## Remaining Tasks
+
+- Phase 2 verification run (Docker): SchemaTriggersTest + UserRepositoryTest, then mark 2.1–2.9 `[x]`
+- Tasks 3.1–7.5 per tasks.md
+- Phase 4 must replace `MainController` ( interim rejection of `/demo/add` becomes a hard 404)
+
+## Status
+
+6/34 tasks verified; 2.1–2.9 authored but **UNVERIFIED (Docker unavailable)** — overall Phase 2 status: **partial**. Not ready for archive; ready for Phase 3 (security plumbing — unit/web slice, no Docker needed) or for the Docker verification run, whichever the orchestrator schedules first.
+
+## Apply Progress: Phase 3 (Security Plumbing, PR 3 branch)
+
+**Branch**: `rest-api-redesign/pr-3-security` (stacked on `rest-api-redesign/pr-2-domain` @ 3fe772a). **Docker: not required** — all Phase 3 slices are unit or `@WebMvcTest` and were executed for real in this environment.
+
+- [x] 3.1–3.2 RED→GREEN (verified): `PasswordEncoderTest` (unit, no Spring context — the bean contract of `SecurityConfig`) + `config/SecurityConfig.java` (`@EnableWebSecurity`, `PasswordEncoder` = `BCryptPasswordEncoder(10)`, permit-all chain with CSRF/form-login/basic disabled, `cors(withDefaults())`). **Cross-stack compatibility verified for real**: the documented constant is a genuine `$2b$10$` hash of `"password"` generated with bcryptjs (the Express stack's bcrypt library) — Spring's encoder verifies it `true`, wrong plaintext `false`; fresh hashes start with `$2a$10$`.
+- [x] 3.3–3.4 RED→GREEN (verified): `SanitizerTest` (11 cases: script tags, uppercase variants, `onerror=`/`onclick =`, `../` + `..\` traversal, `<b>` markup vs. accepted `José Lía`, null/blank, ordinary punctuation) + `util/Sanitizer.java` (`requireClean(field, value)` pure static, blocklist of 3 regex classes) + `util/SanitizationException.java`.
+- [x] 3.5–3.6 RED→GREEN (verified): `CorsConfigTest` (`@WebMvcTest(MainController.class)` + MockMvc, `@Import({SecurityConfig, CorsConfig})`, mocked `UserRepository`) — allowed-origin preflight + actual request get the allow-origin grant; foreign origin: 403 preflight rejection, NO allow-origin header, NO wildcard, never a 500; Origin-less requests proceed normally → `config/CorsConfig.java` (single origin `http://localhost:3000`, explicit methods/headers, no wildcard).
+- [x] 3.7–3.8 RED→GREEN (verified): `RateLimitFilterTest` (4 threat-matrix cases) + `exception/RateLimitExceededException.java` (carries `retryAfterSeconds`) + `config/RateLimitFilter.java` (bucket4j `OncePerRequestFilter`, `ConcurrentHashMap<String, Bucket>`, key = first `X-Forwarded-For` else remote addr, 429 ApiError-shaped envelope + `Retry-After`, fail-open on internal failure) + `config/RateLimitConfig.java` (`@ConfigurationProperties app.ratelimit.*`, `FilterRegistrationBean` for `/api/**`, highest precedence).
+
+### TDD Cycle Evidence (Phase 3 — all executed; no Docker involved)
+
+| Task | Test File | Layer | Safety Net | RED | GREEN | TRIANGULATE | REFACTOR |
+|------|-----------|-------|------------|-----|-------|-------------|----------|
+| 3.1–3.2 | `security/PasswordEncoderTest.java` | Unit | ✅ AppConfigurationPropertiesTest 7/7 baseline | ✅ Compile failure (`SecurityConfig` missing) | ✅ 3/3 pass | ✅ 3 cases (real bcryptjs `$2b$10$` pair, own-plaintext round-trip incl. wrong plaintext, cost-10 format) + fixed an over-claimed constant after a real FAILED run | ✅ Clean |
+| 3.3–3.4 | `util/SanitizerTest.java` | Unit | ✅ 7/7 baseline | ✅ Compile failure (`Sanitizer` missing) | ✅ 11/11 pass | ✅ 8 reject payloads + 3 accept paths (unicode, null/blank, punctuation) | ✅ Clean (3 regex classes extracted to a list) |
+| 3.5–3.6 | `config/CorsConfigTest.java` | Web slice (`@WebMvcTest` + MockMvc) | ✅ 7/7 baseline | ✅ Compile failure (`CorsConfig` missing) | ✅ 4/4 pass | ✅ 4 scenarios (preflight allow, actual allow, foreign deny not-500, no-Origin pass) | ➖ None needed |
+| 3.7–3.8 | `config/RateLimitFilterTest.java` | Unit (MockFilterChain-style harness) | ✅ 7/7 baseline | ✅ Compile failure (filter/exception missing) | ✅ 4/4 pass | ✅ 4 threat-matrix scenarios (429 envelope + Retry-After, global bucket, XFF independence, fail-open) | ➖ None needed |
+
+### Test Summary (Phase 3)
+- **Total tests written**: 22 (3 + 11 + 4 + 4)
+- **Total tests passing**: 22; combined run with Phase 1 regression: **29/29** (`./mvnw -o test -Dtest=PasswordEncoderTest,SanitizerTest,CorsConfigTest,RateLimitFilterTest,AppConfigurationPropertiesTest` → BUILD SUCCESS)
+- **Layers used**: Unit (18), Web slice (4). No Testcontainers, no Docker, no live MySQL/Mongo.
+- **Approval tests**: None — no refactoring of existing logic.
+
+### Work Unit Evidence (Unit 3: Security plumbing)
+
+- **Focused test command**: `.\mvnw.cmd -o test "-Dtest=PasswordEncoderTest,SanitizerTest,CorsConfigTest,RateLimitFilterTest,AppConfigurationPropertiesTest"` → **29/29 PASS** (observed).
+- **Runtime harness**: CORS behavior executed through a real Spring Security filter chain in the `@WebMvcTest` slice (preflight 200/403, allow-origin headers). Rate limit executed against the real `RateLimitFilter` + bucket4j buckets (429 + `Retry-After` observed). Full boot against Aiven/MySQL not attempted (out of this slice; domain wiring remains Docker-gated from Phase 2). Live curl harness against a running instance remains a Phase 4+/verify activity.
+- **Rollback boundary**: `git revert add67e2 da16db3 4363d4f c012856` (or revert `config/SecurityConfig.java`, `config/CorsConfig.java`, `config/RateLimitConfig.java`, `config/RateLimitFilter.java`, `exception/RateLimitExceededException.java`, `util/`; no prior-phase files touched except tasks.md marks).
+
+### Files Changed (Phase 3)
+
+| File | Action | What |
+|------|--------|------|
+| `src/main/java/com/sena/mysqlwithjpa/config/SecurityConfig.java` | Created | BCrypt encoder (strength 10) + permit-all chain, CSRF/form-login/basic off, cors() enabled |
+| `src/test/java/com/sena/mysqlwithjpa/security/PasswordEncoderTest.java` | Created | Cross-stack `$2b$10$` verification (bcryptjs-generated pair), round-trip, cost check |
+| `src/main/java/com/sena/mysqlwithjpa/util/Sanitizer.java` | Created | `requireClean` blocklist: HTML tags, `on*=`, `../` traversal |
+| `src/main/java/com/sena/mysqlwithjpa/util/SanitizationException.java` | Created | Violation type (→ 400 mapping in Phase 4) |
+| `src/test/java/com/sena/mysqlwithjpa/util/SanitizerTest.java` | Created | 11 cases |
+| `src/main/java/com/sena/mysqlwithjpa/config/CorsConfig.java` | Created | Single-origin CORS source (no wildcard) |
+| `src/test/java/com/sena/mysqlwithjpa/config/CorsConfigTest.java` | Created | 4 threat-matrix web-slice cases |
+| `src/main/java/com/sena/mysqlwithjpa/config/RateLimitFilter.java` | Created | bucket4j per-IP filter, 429 envelope + Retry-After, fail-open |
+| `src/main/java/com/sena/mysqlwithjpa/config/RateLimitConfig.java` | Created | `app.ratelimit.*` binding + `/api/**` registration |
+| `src/main/java/com/sena/mysqlwithjpa/exception/RateLimitExceededException.java` | Created | Carries retry-after seconds |
+| `src/test/java/com/sena/mysqlwithjpa/config/RateLimitFilterTest.java` | Created | 4 threat-matrix cases |
+| `openspec/changes/rest-api-redesign/tasks.md` | Modified | 3.1–3.8 marked [x] |
+
+### Commits (Phase 3, branch `rest-api-redesign/pr-3-security`)
+
+- `add67e2` feat(security): add BCrypt PasswordEncoder and permit-all security chain
+- `da16db3` feat(security): add input sanitizer rejecting XSS and path-traversal payloads
+- `4363d4f` feat(security): restrict CORS to the http://localhost:3000 frontend
+- `c012856` feat(security): add global per-IP bucket4j rate limiting with 429 envelope
+
+### Deviations from Design (Phase 3)
+
+1. **429 rendered by the filter itself, not by `ExceptionController`** — design Decision 3 routes `RateLimitExceededException` through the advice, but servlet filters run before the DispatcherServlet, so advice can never see filter-thrown exceptions. The filter renders the identical ApiError-shaped JSON + `Retry-After`; the 429 advice handler in task 4.5 still lands as defense-in-depth for MVC-side throws.
+2. **`.cors(withDefaults())` lives in `SecurityConfig`** — Spring Security only applies its `CorsFilter` when `cors()` is enabled on the chain; the dedicated `CorsConfig` bean carries the policy (design intent preserved).
+3. **Known-hash constant is a freshly generated bcryptjs pair, not a production dump value** — no production dump is present in this repo. The constant is a real `$2b$10$` hash of the documented plaintext `"password"` generated with bcryptjs locally; the earlier well-known jBCrypt sample constant turned out to NOT be a hash of `"password"` (caught by a real failing run of 3.1). A dump-derived pair can replace it without changing the test logic.
+4. **`SanitizationException` added** beyond the design file table — the violation type "mapped to 400" needs a concrete class; its `@ExceptionHandler` wiring belongs to Phase 4 (`ExceptionController`).
+
+### Issues / Risks (Phase 3)
+
+- **PR budget**: Phase 3 slice = **689 changed lines** (681+, 8− across 12 `src/` files + tasks.md marks), over the 400 budget as one PR. Honest commit-boundary split: **PR 3a** = `add67e2` + `da16db3` (encoder + sanitizer ≈ 230 lines) → **PR 3b** = `4363d4f` (CORS ≈ 122 lines) → **PR 3c** = `c012856` (rate limit ≈ 337 lines). Every commit is independently green and revertable; do not shrink code to fit.
+- **Test `src/test/resources/application.properties`** still shadows the main config (Phase 2 note); the `@WebMvcTest` slice boots fine with it because the web slice never initializes JPA/Mongo.
+- Mockito JDK self-attach warning remains cosmetic (Maven-surefire agent config out of scope).
+
+## Status
+
+14/34 tasks verified (Phases 1 + 3 complete and tested); 2.1–2.9 authored but **UNVERIFIED (Docker unavailable)**. Next: Phase 2 Docker verification run, then Phase 4 (Core CRUD) on branch `rest-api-redesign/pr-4-core` stacked on PR 3. Not ready for archive.
+
+## Apply Progress: Phase 4 (Core CRUD, PR 4 branch) — VERIFIED
+
+**Branch**: `rest-api-redesign/pr-4-core` (stacked on `rest-api-redesign/pr-3-security` @ 6ae1b5f). **Docker: not required** — Mockito unit + `@WebMvcTest` slices, all executed for real in this environment.
+
+- [x] 4.1→4.2→4.3 RED→GREEN (verified): `UserServiceTest` (JUnit 5 + Mockito, mock `UserRepository` + `PasswordEncoder`, 14 tests): RED = compile failure (`UserService`/DTOs/exceptions absent, observed) → GREEN **14/14 PASS**. Covers spec cases (a) hash-before-save (stored ≠ plaintext), (b) short `contrasena` → `IllegalArgumentException` BEFORE encoder/repository are touched, (c) duplicate `documento` / `correoElectronico` → `DuplicateResourceException` naming the field, (d) `<script>` in `primerNombre` → `SanitizationException` with zero persistence + triangulation (`José Lía` passes byte-identical, explicit `rol=ADMIN`/`tipoApoyo=alimentacion` kept), (e) update without `contrasena` leaves the stored hash byte-identical (encoder never called) + triangulation (update WITH contrasena re-hashes), (f) update of missing id → `NotFoundException`, (g) trigger-owned columns never carried (`ultimaActualizacion` null on insert, `fechaRegistro` service-set, `rol` null-omitted for `rolDefecto`). Plus findById/delete happy+404 paths. Files: `service/exception/DuplicateResourceException`, `service/exception/NotFoundException` (both carry named context), `service/UserService`, DTOs `dto/UserRequest` + `dto/UserResponse` as **Java records** (see deviation 1).
+- [x] 4.4→4.5 RED→GREEN (verified): `UserControllerTest` (`@WebMvcTest(MainController.class)` + `@Import({SecurityConfig, CorsConfig})`, `@MockitoBean UserService`, 16 tests). RED = context load failure (16/16 ERROR) because the old `MainController` still required `UserRepository` — observed. GREEN: `MainController` rewritten as `@RestController /api/users` (POST 201 with `@Validated(OnCreate)`, GET 200, PUT 200 `@Valid`, DELETE 204 empty); legacy `/demo/**` deleted; `ExceptionController` extended with handlers for bean validation (400), `SanitizationException`/`IllegalArgumentException` (400), `NotFoundException` (404), `DuplicateResourceException` + `DataIntegrityViolationException` fallback (409), `RateLimitExceededException` (429 + `Retry-After`), and unrouted paths (`NoHandlerFoundException`/`NoResourceFoundException` → 404 — see deviation 2). `ApiError.java` untouched (verified by diff).
+- [x] 4.6 routing threat-matrix regression (verified): POST `/demo/add` → 404, GET `/demo/all` → 404, POST `/login` → 404. Authored inside the 4.4 RED (observed failing: `/demo/*` gave 500 via the interim `UnsupportedOperationException`/legacy mapping, POST `/login` already 404) and passing since the 4.5 rewrite.
+
+### TDD Cycle Evidence (Phase 4 — all executed; no Docker)
+
+| Task | Test File | Layer | Safety Net | RED | GREEN | TRIANGULATE | REFACTOR |
+|------|-----------|-------|------------|-----|-------|-------------|----------|
+| 4.1–4.3 | `service/UserServiceTest.java` | Unit (Mockito) | ✅ 29/29 baseline run before edits | ✅ Compile failure (`UserService` missing) | ✅ 14/14 pass | ✅ 12 scenarios incl. unicode accept, re-hash update, duplicate per field, trigger-hygiene | ✅ `applyMutableFields`/`sanitize` helpers extracted; green after |
+| 4.4–4.5 | `controller/UserControllerTest.java` | Web slice (`@WebMvcTest`) | ✅ 29/29 baseline | ✅ Context load failure (16/16 ERROR, old controller contract) | ✅ 16/16 pass | ✅ Status matrix 201/200/204/400×3/404×5/409/429/500 + no-password serialization assertions | ✅ `ExceptionController` build/buildBody helpers for the new handlers; existing handlers untouched |
+| 4.6 | (3 legacy-route tests inside `UserControllerTest`) | Web slice | ✅ 29/29 baseline | ✅ observed 500/200 while legacy routes lived | ✅ 3/3 pass after rewrite | ➖ Single shape per route (status-only contract) | ➖ None |
+
+Two real failures were caught and fixed DURING `UserControllerTest`'s GREEN pass (honest iteration, not silent): (1) `@Validated(OnCreate.class)` ignored the default group — `OnCreate` now extends `jakarta.validation.groups.Default` so required fields still validate on POST; (2) unrouted paths fell into the 500 catch-all — added a 404 handler for `NoHandlerFoundException`/`NoResourceFoundException`, which is also what makes 4.6's contract hold.
+
+### Test Summary (Phase 4)
+- **Total tests written**: 30 (14 service + 16 controller)
+- **Total tests passing**: 30; combined run with Phases 1+3 regression: **59/59** (`./mvnw -o test -Dtest=UserServiceTest,UserControllerTest,PasswordEncoderTest,SanitizerTest,CorsConfigTest,RateLimitFilterTest,AppConfigurationPropertiesTest` → BUILD SUCCESS)
+- **Layers used**: Unit (14), Web slice (16). No Testcontainers, no Docker, no live MySQL/Mongo.
+- **Approval tests**: None — MainController's old behavior was superseded by spec (its only live read path, `/demo/all`, is replaced per contract by 404 + `/api/users` coverage).
+
+### Work Unit Evidence (Unit 4: Core CRUD)
+
+- **Focused test command**: `.\mvnw.cmd -o test "-Dtest=UserServiceTest,UserControllerTest"` → **30/30 PASS** (observed). Full slice regression: **59/59 PASS** (observed).
+- **Runtime harness**: full status matrix executed through a real Spring Security filter chain + DispatcherServlet in the `@WebMvcTest` slice (201/200/204/400/404/409/429/500, `Retry-After` header, password-free JSON bodies). Boot against Aiven/MySQL not attempted (runtime DB boundary remains Docker-gated, Phase 2 carry-over); `PUT /api/users/{id}` without `contrasena` exercising the validation-group split ran green through MockMvc.
+- **Rollback boundary**: `git revert 4140bd1 2fc8066` (or revert `service/`, `dto/`, `controller/MainController.java`, `controller/ExceptionController.java`, the two new test files, and the `CorsConfigTest` mock/URL update). No prior-phase files otherwise touched; `controller/ApiError.java` verified unchanged by diff.
+
+### Files Changed (Phase 4)
+
+| File | Action | What |
+|------|--------|------|
+| `src/main/java/com/sena/mysqlwithjpa/service/UserService.java` | Created | Hashing, ≥8 pre-hash validation, sanitizer, uniqueness pre-checks, trigger-aware persistence |
+| `src/main/java/com/sena/mysqlwithjpa/service/exception/{DuplicateResourceException,NotFoundException}.java` | Created | 409 (carries `field`) / 404 types |
+| `src/main/java/com/sena/mysqlwithjpa/dto/{UserRequest,UserResponse}.java` | Created | Records; `OnCreate` validation group extending `Default`; response has no password field at all |
+| `src/main/java/com/sena/mysqlwithjpa/controller/MainController.java` | Rewritten | `@RestController /api/users`; POST/GET/PUT/DELETE per frozen route table; `/demo/**` deleted |
+| `src/main/java/com/sena/mysqlwithjpa/controller/ExceptionController.java` | Extended | 400 (bean validation, sanitizer/service input), 404 (not-found + unrouted), 409 (duplicate + constraint fallback), 429 + `Retry-After`; existing handlers kept |
+| `src/main/java/com/sena/mysqlwithjpa/controller/ApiError.java` | Unchanged (verified) | Reused envelope |
+| `src/test/java/com/sena/mysqlwithjpa/service/UserServiceTest.java` | Created | 14 Mockito cases |
+| `src/test/java/com/sena/mysqlwithjpa/controller/UserControllerTest.java` | Created | 16 MockMvc cases incl. legacy-404 regression |
+| `src/test/java/com/sena/mysqlwithjpa/config/CorsConfigTest.java` | Modified | Probes moved from deleted `/demo/all` to `/api/users/7`; mock switched to `UserService` (forced by the controller's new constructor) |
+| `openspec/changes/rest-api-redesign/tasks.md` | Modified | 4.1–4.6 marked [x] |
+
+### Commits (Phase 4, branch `rest-api-redesign/pr-4-core`)
+
+- `2fc8066` feat(users): add UserService with hashing, validation, sanitization and uniqueness checks (511 src lines)
+- `4140bd1` feat(users): expose REST CRUD at /api/users with full ApiError status envelope (≈486 src lines incl. controller test + CorsConfigTest probe move)
+
+### Deviations from Design (Phase 4)
+
+1. **DTOs implemented as Java records** (design shows no DTO shape, only the field/validation contract). Records give immutability + Jackson + bean validation for free and remove ~100 lines of getters; the contract (required/optional fields, `contrasena` create-only via the `OnCreate` group, no password in responses) matches the design exactly.
+2. **`NoHandlerFoundException`/`NoResourceFoundException` mapped to 404 explicitly** — design Decision 1's route table plus the spec's legacy-404 requirement silently assumed unmapped paths answer 404, but Spring's default in this stack lets them reach the generic handler as 500. The explicit mapping is the only honest implementation of the spec scenario.
+3. **Short-password rejection throws `IllegalArgumentException`** (mapped to 400 alongside `SanitizationException`) — task 4.2 authorizes exactly two new exception types (duplicate/not-found); inventing a third would deviate more.
+4. **429 lives in BOTH the filter and the advice** (design correction already recorded in Phase 3): the filter renders its own envelope for filter-chain rejections; the advice handler is the tested MVC-side fallback.
+
+### Issues / Risks (Phase 4)
+
+- **PR budget**: Phase 4 slice = **997 changed lines** (`src/` only, across the two commits), well over the 400-line budget as one PR. Honest commit-boundary split at PR-creation time: **PR 4a** = `2fc8066` (service slice ≈511 lines, independently green: 14/14 + regression) → **PR 4b** = `4140bd1` (controller slice ≈486 lines, 59/59). Both slices are test-heavy by strict-TDD construction; no cohesive further split exists without orphaning tests from their code — if the maintainer hard-enforces 400/PR, these two slices need `size:exception`. Not pushed; no PRs created (per orchestrator boundary).
+- Mockito JDK self-attach warning remains cosmetic.
+
+## Status
+
+20/34 tasks verified (Phases 1, 3, 4 complete and tested — 59/59 green in this environment); 2.1–2.9 still **UNVERIFIED (Docker unavailable)**. Next: Phase 2 Docker verification run, then Phase 5 (Search & Pagination) on a PR 5 branch stacked on `rest-api-redesign/pr-4-core`. Not ready for archive.
+
+## Apply Progress: Phase 6 (MongoDB Logging, PR 6 branch) — VERIFIED
+
+**Branch**: `rest-api-redesign/pr-6-mongo-logging` stacked on `rest-api-redesign/pr-4-core` @ 43d6813. **Chain order adapted**: the user explicitly chose to SKIP Phase 5 for now (its repository tests need Docker, which is down); PR 6 is therefore stacked directly on PR 4, and Phase 5 will land later on its own branch. `stacked-to-main` strategy otherwise unchanged. **Docker: not required** — Mockito unit slices with a mocked `MongoTemplate`, all executed for real in this environment.
+
+- [x] 6.1 RED → 6.2 GREEN (verified): `LogServiceTest` created first (observed RED = compile failure, `LogService`/`LogEntry` absent): per-level routing — `logInfo` → `info` only (never `warns`/`error`), `logWarn` → `warns` only, `logError(msg, t)` → `error` with captured stack trace; document content (timestamp, level, message, component); secret hygiene assertion (no plaintext password, no `$2b$` hash prefix, no `mongodb://` connection string, no `contrasena` field names in any persisted document). GREEN via `service/log/LogEntry.java` (record) + `service/log/LogService.java` (writes via `MongoTemplate`, lazy collection creation, gated on `app.logging.mongo.enabled` default `true`).
+- [x] 6.3 RED (observed) → 6.4 GREEN (verified): degradation tests failed with the raw exception propagating (2/7 failing — observed); GREEN via try/catch on every write (swallow + SLF4J warn, design Decision 6) — failure never reaches the caller and the dropped entry is reported to the console log (verified with a Logback `ListAppender`); with `app.logging.mongo.enabled=false` all methods are verified no-ops. Startup never blocks on Mongo: `MongoTemplate` connects lazily on first write, no eager connection anywhere.
+- [x] 6.5 GREEN (verified): `LogService` wired into `UserService` — `logInfo("UserService", "user created id=N")` / `updated` / `deleted` on successful flows only; rejection paths (duplicate, not-found, sanitizer) log nothing (verified by `verifyNoInteractions` on the not-found delete). RED observed first (3 interaction tests failing with "wanted but not invoked"), then wiring → green.
+
+### TDD Cycle Evidence (Phase 6 — all executed; no Docker)
+
+| Task | Test File | Layer | Safety Net | RED | GREEN | TRIANGULATE | REFACTOR |
+|------|-----------|-------|------------|-----|-------|-------------|----------|
+| 6.1–6.2 | `service/log/LogServiceTest.java` | Unit (Mockito, mocked `MongoTemplate`) | ✅ 59/59 baseline run before edits | ✅ Compile failure (`LogService` absent) | ✅ 5/5 routing/content/flag tests pass | ✅ 4 distinct scenarios (info/warns/error routing + secret hygiene) | ✅ Clean (`stackTraceOf` helper extracted) |
+| 6.3–6.4 | (same file — degradation block) | Unit (Mockito + Logback `ListAppender`) | ✅ 59/59 baseline | ✅ 2/7 failing: raw `IllegalStateException` propagated to caller (observed) | ✅ 7/7 pass | ✅ Failure swallowed for info AND error paths + SLF4J report asserted + disabled-flag no-op | ✅ `write(collection, entry)` private helper absorbs the try/catch once, not three times |
+| 6.5 | `service/UserServiceTest.java` (+4 tests) | Unit (Mockito) | ✅ 59/59 baseline | ✅ 3 failures: `logService.logInfo` wanted but not invoked (observed) | ✅ 18/18 pass | ✅ create/update/delete happy paths + not-found delete logs nothing; message content asserted (action, id, NO plaintext/hash/email) | ➖ None needed |
+
+### Test Summary (Phase 6)
+- **Total tests written**: 11 (7 `LogServiceTest` + 4 new `UserServiceTest`)
+- **Total tests passing**: 11; full slice regression: **70/70 PASS** (`./mvnw -o test -Dtest=LogServiceTest,UserServiceTest,UserControllerTest,PasswordEncoderTest,SanitizerTest,CorsConfigTest,RateLimitFilterTest,AppConfigurationPropertiesTest` → BUILD SUCCESS, observed)
+- **Layers used**: Unit (11). No Testcontainers, no Docker, no live MongoDB.
+- **Approval tests**: None — no refactoring of existing logic; `UserService` additions are behavior additions with new tests.
+
+### Work Unit Evidence (Unit 6: MongoDB logging)
+
+- **Focused test command**: `.\mvnw.cmd -o test "-Dtest=LogServiceTest"` → **7/7 PASS** (observed). Full regression: **70/70 PASS** (observed).
+- **Runtime harness**: degradation path executed against a mocked `MongoTemplate` throwing on `save` (caller unaffected, SLF4J report asserted via `ListAppender`); disabled flag verified as pure no-op (`verifyNoInteractions`). Live run with unreachable Mongo URI / `MONGO_LOGGING_ENABLED=false` against a booted app remains a verify-phase activity (app boot needs the MySQL datasource, Docker-gated in this environment). No eager Mongo connection exists in code (lazy `MongoTemplate` connect on first write), so startup is unaffected by construction.
+- **Rollback boundary**: `git revert 786fe84 83df269` (or revert `service/log/`, the `UserService` log lines, `UserServiceTest` additions, tasks.md marks). No prior-phase behavior touched.
+
+### Files Changed (Phase 6)
+
+| File | Action | What |
+|------|--------|------|
+| `src/main/java/com/sena/mysqlwithjpa/service/log/LogEntry.java` | Created | Record: timestamp, level, message, component, stackTrace (null on non-errors) |
+| `src/main/java/com/sena/mysqlwithjpa/service/log/LogService.java` | Created | Per-level `MongoTemplate` writes (`info`/`warns`/`error`), lazy collections, `app.logging.mongo.enabled` gate, try/catch degradation to SLF4J |
+| `src/test/java/com/sena/mysqlwithjpa/service/log/LogServiceTest.java` | Created | 7 tests: routing, content, stack trace, secrets, degradation, disabled flag |
+| `src/main/java/com/sena/mysqlwithjpa/service/UserService.java` | Modified | `LogService` injected; `logInfo` on successful create/update/delete with component + action + id only |
+| `src/test/java/com/sena/mysqlwithjpa/service/UserServiceTest.java` | Modified | 4 new tests asserting the logging contract incl. not-found silence |
+| `openspec/changes/rest-api-redesign/tasks.md` | Modified | 6.1–6.5 marked [x] |
+
+### Commits (Phase 6, branch `rest-api-redesign/pr-6-mongo-logging`)
+
+- `83df269` feat(logging): add MongoDB system logger with per-level collections and graceful degradation
+- `786fe84` feat(users): log create/update/delete operations (component + action + id only)
+
+### Deviations from Design (Phase 6)
+
+None — implementation matches design Decision 6 exactly (per-level collections, lazy creation, `app.logging.mongo.enabled` opt-out defaulting true, try/catch degradation, no eager connection). `logWarn`/`logError` are not yet called from business flows — task 6.5 only mandates the wiring of create/update/delete operational events; warn/error paths remain available for Phase 7/verify usage.
+
+### Issues / Risks (Phase 6)
+
+- **PR budget**: Phase 6 slice = **371 changed lines** (363+, 8− across 6 files), WITHIN the 400 budget — single PR, no split or `size:exception` needed.
+- **Chain-order deviation (user-directed)**: PR 6 stacked on PR 4 (`43d6813`), NOT on PR 5 — Phase 5 skipped for now (Docker required). When Phase 5 lands, its branch should stack on `pr-6-mongo-logging` or rebase; either keeps `stacked-to-main` intact.
+- Mockito JDK self-attach warning remains cosmetic.
+
+## Status
+
+25/34 tasks verified (Phases 1, 3, 4, 6 complete and tested — 70/70 green in this environment); 2.1–2.9 still **UNVERIFIED (Docker unavailable)**; Phase 5 and Phase 7 pending. Next: Phase 2 Docker verification run, then Phase 5 (Search & Pagination), then Phase 7 docs. Not ready for archive.
+
+## Apply Progress: Phase 5 (Search & Pagination, PR 5 branch) � PARTIAL (controller slice VERIFIED; repository slice Docker-gated)
+
+**Branch**: `rest-api-redesign/pr-5-search` (stacked on `rest-api-redesign/pr-6-mongo-logging` @ dc572eb; stacked-to-main preserved � the later-merged PR 6 became the base when the user rescheduled Phase 5 after it). **Docker daemon: UNAVAILABLE (user directive � no Docker this run; authorized protective downgrade)**. 5.3/5.4 ran the FULL RED?GREEN cycle for real (MockMvc + Mockito); 5.1 was NOT authored and 5.2 is implemented but UNVERIFIED against a real DB.
+
+- [ ] 5.1 **NOT authored (user directive, Docker down)**: `UserSearchRepositoryTest` (@DataJpaTest + Testcontainers) stays unwritten AND unchecked; pending Docker verification run together with Phase 2.
+- [ ] 5.2 **Implemented, UNVERIFIED**: derived `Page<User> findByPrimerNombreAndDocumento(String, Long, Pageable)` + `Page<User> findByPrimerNombreOrPrimerApellidoOrDocumento(String, String, Long, Pageable)` added to `UserRepository` (compile-verified; wiring exercised via mocked-repository service tests; no real-DB run).
+- [x] 5.3 RED (verified): `UserSearchControllerTest` (@WebMvcTest(MainController.class) + MockMvc, mocked `UserService`, 9 tests) � RED observed as compilation failure (25 errors: `findAllUsers`/`searchAnd`/`searchOr` absent).
+- [x] 5.4 GREEN (verified): `GET /api/users` paged listing, `GET /api/users/search/and`, `GET /api/users/search/or` on `MainController`; clamp `PageRequest.of(page, Math.min(size, 7))` (design Decision 5); controller parses OR `term` to `Long` when numeric, else `null` for the documento branch (design contract); service delegates via `PagedModel<UserResponse>` (password-free by construction) � 9/9 PASS observed, plus 3 new `UserServiceTest` delegation/mapping tests ? 82/82 full regression PASS (observed).
+
+### TDD Cycle Evidence (Phase 5 � controller/service slices executed for real; repository slice Docker-gated)
+
+| Task | Test File | Layer | Safety Net | RED | GREEN | TRIANGULATE | REFACTOR |
+|------|-----------|-------|------------|-----|-------|-------------|----------|
+| 5.1 | `repository/UserSearchRepositoryTest.java` | Integration (Testcontainers) | � | ? SKIPPED (user directive: no Docker) � NOT authored | ? UNVERIFIED | ? | ? |
+| 5.2 | (derived finders; covered only via mocked repository) | Repository | ? 70/70 baseline | ? Test-first: controller/service tests reference the finders before they existed (compile RED) | ?? Compile-verified only; real-DB GREEN pending Docker | ?? Real-DB scenarios pending (5.1) | ? Signature-only code |
+| 5.3�5.4 | `controller/UserSearchControllerTest.java` | Web slice (@WebMvcTest) | ? 70/70 baseline | ? Compile failure (25 errors, methods absent) � observed | ? 9/9 pass � observed | ? 9 spec-mapped scenarios (7-record page + metadata, size=50 clamp via ArgumentCaptor, partial page 3/10/2, out-of-range empty, AND match, AND empty-200, OR 12-match cap, numeric-term Long parse, injection-shaped literal) | ? Clean (term parser = one pure private static method) |
+| 5.4 (service) | `service/UserServiceTest.java` (+3 tests) | Unit (Mockito, mocked repository) | ? 70/70 baseline | ? Test-first (same compile RED) | ? 21/21 pass � observed | ? findAll paging meta mapping, AND criteria pass-through, OR term fanned to both name branches + Long documento | ? None needed |
+
+### Test Summary (Phase 5)
+- **Total tests written**: 12 (9 `UserSearchControllerTest` + 3 `UserServiceTest`)
+- **Total tests passing**: 12; full regression: **82/82 PASS** (`./mvnw -o test -Dtest=UserServiceTest,UserControllerTest,UserSearchControllerTest,PasswordEncoderTest,SanitizerTest,CorsConfigTest,RateLimitFilterTest,AppConfigurationPropertiesTest,LogServiceTest`, BUILD SUCCESS � observed)
+- **Layers used**: Unit (3), Web slice (9). No Testcontainers, no Docker, no live MySQL/Mongo.
+- **Approval tests**: None � no refactoring of existing logic; all additions are new behavior.
+
+### Work Unit Evidence (Unit 5: Search & pagination)
+
+- **Focused test command**: `.\mvnw.cmd -o test "-Dtest=UserSearchControllerTest,UserServiceTest"` ? **30/30 PASS** (observed). Full regression: **82/82 PASS** (observed).
+- **Runtime harness**: the full web slice executed through the real Spring Security filter chain + DispatcherServlet (clamp, paging metadata shape `$.page.*`, injection-shaped term reaching the service verbatim). Real harness `GET /api/users?page=0&size=50` against a live DB NOT RUNNABLE � no Docker; the repository finders' DB behavior is the top residual risk, carried with Phase 2's gate.
+- **Rollback boundary**: `git revert 623218b 1c73acb` (or revert the 3 production methods + 2 derived finders and the 2 test additions; no prior-phase behavior touched).
+
+### Files Changed (Phase 5)
+
+| File | Action | What |
+|------|--------|------|
+| `src/main/java/com/sena/mysqlwithjpa/repository/UserRepository.java` | Modified | +2 derived paged finders (parameterized by construction) |
+| `src/main/java/com/sena/mysqlwithjpa/service/UserService.java` | Modified | `findAllUsers` / `searchAnd` / `searchOr` returning `PagedModel<UserResponse>` |
+| `src/main/java/com/sena/mysqlwithjpa/controller/MainController.java` | Modified | `GET /api/users`, `/search/and`, `/search/or`; `Math.min(size, 7)` clamp; numeric OR-term parse |
+| `src/test/java/com/sena/mysqlwithjpa/controller/UserSearchControllerTest.java` | Created | 9 MockMvc spec scenarios |
+| `src/test/java/com/sena/mysqlwithjpa/service/UserServiceTest.java` | Modified | +3 delegation/mapping tests |
+| `openspec/changes/rest-api-redesign/tasks.md` | Modified | 5.3/5.4 [x]; 5.1/5.2 unchecked with Docker-gate note |
+
+### Commits (Phase 5, branch `rest-api-redesign/pr-5-search`)
+
+- `1c73acb` feat(users): add derived AND/OR search queries to UserRepository (12 lines; compile-only, DB-unverified)
+- `623218b` feat(users): expose paged listing and AND/OR search endpoints clamped to 7 records (319+/4-)
+
+### Deviations from Design (Phase 5)
+
+1. **Responses use `PagedModel<UserResponse>`, not `Page`** � Spring Data's stable serialization surface (`$.content`, `$.page.{size,number,totalElements,totalPages}`); the design only pins the metadata contract (page, size, totals), which PagedModel satisfies.
+2. **Base branch is PR 6, not PR 5's original plan of PR 4** � consequence of the user-rescheduled chain order (Phase 6 first); stacked-to-main semantics preserved.
+3. **5.1 not authored, 5.2 unverified** � per explicit user directive (no Docker); both remain unchecked with the note in tasks.md.
+
+### Issues / Risks (Phase 5)
+
+- **TOP RISK � repository layer unverified**: `findByPrimerNombreAndDocumento` / `findByPrimerNombreOrPrimerApellidoOrDocumento` have never run against MySQL (derived-name resolution to `primerNombre`/`primerApellido`/`documento` columns and the `null`-documento OR branch semantics are compile-plus-mock verified only). Run `./mvnw test -Dtest=UserSearchRepositoryTest` once Docker is available, together with Phase 2's suite � then mark 5.1/5.2.
+- **PR budget**: Phase 5 slice = **335 changed lines** (331+, 4- across 6 files), WITHIN the 400 budget � single PR, no split needed.
+- Mockito JDK self-attach warning remains cosmetic.
+
+## Status
+
+27/34 tasks verified (Phases 1, 3, 4, 6 complete + Phase 5 controller slice tested � 82/82 green in this environment); 2.1�2.9 and 5.1�5.2 **UNVERIFIED (Docker unavailable)** � overall Phase 5 status: **partial**. Next: Phase 2+5 Docker verification run, then Phase 7 (docs). Not ready for archive.
+
+## Apply Progress: Phase 7 (Documentation & Final Verification, PR 7 branch) — PARTIAL
+
+**Branch**: `rest-api-redesign/pr-7-docs` (stacked on `rest-api-redesign/pr-5-search` @ 6895c19; stacked-to-main preserved). **Docker: not required for the docs themselves** — but gates 7.4 (full suite) and 7.5 (Aiven DDL query) cannot be completed in this environment and stay unchecked with explicit unblock instructions in tasks.md.
+
+- [x] 7.1 `docs/ARCHITECTURE.md` created: layered design diagram, frozen route table (design Decision 1), trigger ownership model, security components (BCrypt/CORS/rate limit/sanitizer), Mongo logging, env-var contract, and an honest verification-status table.
+- [x] 7.2 `docs/STEP_BY_STEP.md` created: prerequisites (Java 21, Maven wrapper, Docker only for Testcontainers), env-var table, `.env` usage, `compose.yaml` credentials documented as dev-only and distinct from production, test commands split into full / Docker-free / Docker-required slices, boot-against-Aiven walkthrough.
+- [x] 7.3 `docs/queries/SEARCH_AND_PAGINATION.md` created: derived AND/OR query methods, OR-term numeric parsing contract, 7-record clamp with observed examples, `PagedModel` metadata shape (`$.page.*`), parameterized-by-construction guarantee with the `Ana'' OR ''1''=''1` example. Documents explicitly that the repository integration tests (5.1/5.2) remain pending the Docker run.
+- [ ] 7.4 Final gate — **partial, UNCHECKED**. Ran the full non-container slice: `.\mvnw.cmd -o test "-Dtest=PasswordEncoderTest,SanitizerTest,CorsConfigTest,RateLimitFilterTest,AppConfigurationPropertiesTest,UserServiceTest,UserControllerTest,UserSearchControllerTest,LogServiceTest"` → **82/82 PASS, 0 failures/errors (observed, BUILD SUCCESS)**. Proposal success criteria verified here: legacy `/demo/add` + `/demo/all` + POST `/login` return 404 (regression tests green inside `UserControllerTest`); 429 envelope + `Retry-After` and CORS allow/deny behavior green in their suites; config has no literal credentials (`AppConfigurationPropertiesTest` asserts it); repo grep shows only `.env.example` placeholders and dev-only `compose.yaml` values; `git check-ignore .env` confirmed and `git status` is clean of `.env`. **What completes 7.4: a Docker-enabled run of `./mvnw test -Dtest=SchemaTriggersTest,UserRepositoryTest,UserSearchRepositoryTest`** (bare `./mvnw test` also works on a Docker-enabled host — it additionally picks up `MysqlwithjpaApplicationTests`, which needs Testcontainers). Until then, "triggers own their columns in integration tests" and "Mongo collections per level (live)" stay unproven.
+- [ ] 7.5 **BLOCKED, UNCHECKED** — needs Aiven MySQL query access, unavailable from this tooling. Run on the production instance: `SHOW CREATE TABLE usuario` and/or `SELECT COLUMN_DEFAULT FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=''defaultdb'' AND TABLE_NAME=''usuario'' AND COLUMN_NAME=''fecha_registro'';` If `COLUMN_DEFAULT` is `CURRENT_TIMESTAMP`, the `fecha_registro` mapping MAY switch to fully DB-owned (`insertable=false, updatable=false`); record the outcome in `docs/ARCHITECTURE.md`. Phase 2.9 required no mapping change (`updatable=false` + `@DynamicInsert` is safe under both DDLs), so no code change is expected.
+
+### Executed verification (this environment)
+
+- **Focused test command**: `.\mvnw.cmd -o test "-Dtest=PasswordEncoderTest,SanitizerTest,CorsConfigTest,RateLimitFilterTest,AppConfigurationPropertiesTest,UserServiceTest,UserControllerTest,UserSearchControllerTest,LogServiceTest"` → **82/82 PASS (observed)**.
+- **Runtime harness**: N/A for the docs work units themselves (docs-only). The web-slice suites re-executed above run through the real Spring Security filter chain + DispatcherServlet. Live boot against Aiven remains a manual STEP_BY_STEP activity.
+- **Rollback boundary**: revert commits `9c4db1d`, `4217654`, `851315b`, `c2ef81e` and the apply-progress commit (i.e. `git revert` them or delete `docs/` and restore the four tasks.md checkbox lines). No code or prior-phase artifacts touched.
+
+### Files Changed (Phase 7)
+
+| File | Action | What |
+|------|--------|------|
+| `docs/ARCHITECTURE.md` | Created | Layered architecture, frozen routes, trigger ownership, security, Mongo logging, env contract, verification status |
+| `docs/STEP_BY_STEP.md` | Created | Build/run guide, env vars, dev-only compose credentials, Docker requirement, Aiven boot |
+| `docs/queries/SEARCH_AND_PAGINATION.md` | Created | Derived AND/OR queries, 7-record max, PagedModel metadata, injection-safety example, pending-integration-test note |
+| `openspec/changes/rest-api-redesign/tasks.md` | Modified | 7.1–7.3 [x]; 7.4/7.5 unchecked with explicit unblock instructions |
+| `openspec/changes/rest-api-redesign/apply-progress.md` | Modified | This section |
+
+### Commits (Phase 7, branch `rest-api-redesign/pr-7-docs`)
+
+- `9c4db1d` docs(architecture): document layered design, frozen routes, trigger ownership and security components
+- `4217654` docs(setup): add build/run guide with env-var contract and dev-only compose credentials
+- `851315b` docs(queries): document AND/OR searches, 7-record clamp and parameterized-by-construction guarantee
+- `c2ef81e` chore(openspec): mark docs tasks 7.1-7.3 complete, record 7.4/7.5 unblock conditions
+
+### Deviations from Design (Phase 7)
+
+None — docs describe the implementation as built (including the recorded Phase 3/4 deviations such as the filter-rendered 429 envelope).
+
+### Issues / Risks (Phase 7)
+
+- **PR budget**: Phase 7 slice = **280 changed lines** (275+, 5− across 4 files) — WITHIN the 400 budget, single PR, no split needed.
+- End-to-end green gate (7.4) and prod-DDL question (7.5) remain open; both are environment-access issues, not code issues.
+
+## Status
+
+30/34 tasks verified (Phases 1, 3, 4, 6 complete; Phase 5 controller slice tested; Phase 7 docs delivered — 82/82 green in this environment). Remaining open: 2.1–2.9, 5.1, 5.2 (Docker run), 7.4 (same Docker run completes it), 7.5 (Aiven query). Not ready for archive.
